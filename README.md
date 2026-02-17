@@ -1,6 +1,11 @@
 # Prism
 
-Lightcone Research's ASP-compliant Agentic Layer.
+Part of [Lightcone Research](https://github.com/LightconeResearch/lightcone.dev) — install all tools with:
+```bash
+curl -fsSL https://lightconeresearch.github.io/lightcone.dev/install.sh | bash
+```
+
+---
 
 ## What is Prism?
 
@@ -10,16 +15,6 @@ Prism is the agentic layer for ASP (Agentic Science Protocol). While ASP provide
 - **Claude Code skills** for analysis creation, insight extraction, and verification
 - **HPC/remote target management** for running on compute clusters
 - **Visual editors** (Canvas, Navigator)
-
-## Installation
-
-```bash
-# Full agentic experience (includes ASP automatically):
-pip install prism
-
-# Development:
-pip install -e ".[dev]"
-```
 
 ## Quick Start
 
