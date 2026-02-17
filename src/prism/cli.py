@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -501,16 +502,34 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
         pip_path = venv_path / "bin" / "pip"
 
     # Try to install prism (which pulls in asp as a dependency)
+    lightcone_dir = Path.home() / ".lightcone"
+    env = {**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.1.0"}
     try:
-        subprocess.run(
-            [str(pip_path), "install", "git+ssh://git@github.com/LightconeResearch/Prism.git"],
-            capture_output=True,
-            check=True,
-        )
+        if (lightcone_dir / "ASP").is_dir() and (lightcone_dir / "Prism").is_dir():
+            # Use local clones from Lightcone installer
+            install_targets = ["-e", str(lightcone_dir / "ASP")]
+            if (lightcone_dir / "Canvas").is_dir():
+                install_targets += ["-e", str(lightcone_dir / "Canvas")]
+            install_targets += ["-e", str(lightcone_dir / "Prism[canvas]")]
+            subprocess.run(
+                [str(pip_path), "install", *install_targets],
+                capture_output=True,
+                check=True,
+                env=env,
+            )
+        else:
+            # Fall back to HTTPS clone URLs
+            subprocess.run(
+                [str(pip_path), "install",
+                 "git+https://github.com/LightconeResearch/Prism.git"],
+                capture_output=True,
+                check=True,
+                env=env,
+            )
         console.print("[green]✓[/green] Installed prism in virtual environment")
     except subprocess.CalledProcessError:
         console.print(
-            "[yellow]Warning:[/yellow] Could not install prism (SSH auth may have failed). "
+            "[yellow]Warning:[/yellow] Could not install prism automatically. "
             "You can install manually with: .venv/bin/pip install prism"
         )
 
