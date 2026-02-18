@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "asp>=0.1",
+    "asp>=0.0.6",
     "click>=8.0",
     "pyyaml>=6.0",
     "rich>=13.0",
