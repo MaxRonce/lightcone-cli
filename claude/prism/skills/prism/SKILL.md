@@ -13,11 +13,13 @@ Help users work with the Agentic Science Protocol (ASP) via Prism — a declarat
 | Command | Purpose |
 |---------|---------|
 | `/prism-new` | Create a new analysis — scope question, structure chunks, identify decisions with literature |
+| `/prism-run` | Execute recipes — materialize outputs, monitor status, diagnose failures |
+| `/prism-status` | Quick pipeline status check — what's materialized, what's pending |
 
 ### Workflow
 
 ```
-/prism-new  →  build each chunk with Claude Code  → ...
+/prism-new  →  build each chunk  →  /prism-run  →  /prism-verify
 ```
 
 `/prism-new` scopes the research question, structures chunks, identifies decisions, and proactively searches for supporting literature. Then start building — Claude Code reads `CLAUDE.md` + `asp.yaml` and implements each chunk.
@@ -96,9 +98,11 @@ asp schema show analysis          # Show JSON schema
 
 # Prism CLI — agent operations
 prism init <directory>            # Create full project with Claude Code config
-prism remote setup perlmutter     # Configure HPC target
-prism canvas                      # Launch visual editor
-prism navigator                   # Launch Navigator
+prism run                         # Execute recipes via Dagster
+prism run accuracy --universe baseline  # Run specific output
+prism status                      # Show materialization status
+prism dev                         # Launch Dagster webserver UI
+prism remote setup perlmutter     # Configure execution target
 ```
 
 ### Writing Results
@@ -119,6 +123,30 @@ outputs:
 ```
 
 For metrics, write a JSON file with the value: `{"value": 0.95}`
+
+### Execution
+
+Outputs with inline `recipe:` blocks can be executed via Dagster:
+
+```yaml
+outputs:
+  - id: accuracy
+    type: metric
+    recipe:
+      command: python scripts/evaluate.py
+      inputs: [trained_model]
+      container: ghcr.io/proj/ml:latest
+      resources: { cpus: 4 }
+```
+
+Recipe fields: `command` (required), `inputs` (optional), `container` (optional), `resources` (optional).
+
+```bash
+prism run                    # materialize all outputs
+prism run accuracy           # materialize specific output
+prism status                 # check materialization status
+prism dev                    # Dagster webserver UI
+```
 
 **Chunk note:** All chunks are defined inline in the root `asp.yaml`. No separate directories or files needed for chunk specifications.
 

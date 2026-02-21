@@ -47,6 +47,16 @@ For every **output**, check that `results/<universe_id>/<output_id>.<ext>` exist
 
 ---
 
+## Check 2.5: Materialization Status
+
+```bash
+prism status --universe <universe_id>
+```
+
+Cross-reference `prism status` output with the file-based check above. If `prism status` shows "ok" but files are missing (or vice versa), flag the inconsistency.
+
+---
+
 ## Check 3: Run Metadata
 
 Check that `results/<universe_id>/run_metadata.yaml` exists and is consistent.

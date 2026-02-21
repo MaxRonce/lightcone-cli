@@ -281,6 +281,8 @@ Then the Next Up block:
 Start building — ask me to implement a chunk
 (e.g. "implement the main chunk")
 
+After implementation, run with `/prism-run`
+
 Every decision becomes a parameter — no hardcoded values.
 New decisions can be added later.
 See CLAUDE.md for details.
@@ -291,6 +293,7 @@ See CLAUDE.md for details.
 
 Also available:
 - `/prism-insights` — add literature support to decisions
+- `/prism-run` — execute recipes and materialize outputs
 
 ───────────────────────────────────────────────────────────────
 ```

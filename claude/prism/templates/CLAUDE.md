@@ -35,6 +35,20 @@ When implementing a chunk:
 For single-chunk analyses, implementation goes directly in `scripts/`.
 For multi-chunk analyses, organize by chunk: `scripts/<chunk_name>/`.
 
+### Executing
+
+Run recipes to produce outputs:
+
+```bash
+prism run                           # all outputs, all universes
+prism run accuracy --universe baseline  # specific output + universe
+prism status                        # check what's materialized
+prism dev                           # Dagster webserver UI
+```
+
+Each output with a `recipe:` block in `asp.yaml` can be materialized via Dagster.
+Results are written to `results/<universe_id>/<output_id>/`.
+
 ### Decision Parameterization
 
 **Every decision in `asp.yaml` must be parameterized in the code.** No decision
