@@ -18,6 +18,7 @@ from prism.dagster.runner import ASPContainerRunner
 
 def build_asset_definitions(
     project_path: Path,
+    runner: ASPContainerRunner | None = None,
 ) -> list[dg.AssetsDefinition]:
     """Read asp.yaml and generate one @asset per output with a recipe."""
     spec = load_yaml(project_path / "asp.yaml")
@@ -29,7 +30,7 @@ def build_asset_definitions(
         recipe = output_def.get("recipe")
         if not output_id or not recipe:
             continue
-        assets.append(_build_single_asset(output_id, recipe))
+        assets.append(_build_single_asset(output_id, recipe, runner))
 
     return assets
 
@@ -37,6 +38,7 @@ def build_asset_definitions(
 def _build_single_asset(
     output_id: str,
     recipe: dict[str, Any],
+    runner: ASPContainerRunner | None = None,
 ) -> dg.AssetsDefinition:
     """Build a single Dagster asset from an output recipe."""
     input_ids = recipe.get("inputs") or []
@@ -52,12 +54,9 @@ def _build_single_asset(
             "container": container or "default",
         },
     )
-    def _asset(
-        context: dg.AssetExecutionContext,
-        asp_runner: ASPContainerRunner,
-    ) -> dg.MaterializeResult:
+    def _asset(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
         universe_id = "baseline"  # TODO: from partition key when partitions are wired
-        result = asp_runner.execute(
+        result = runner.execute(
             command=command,
             container=container,
             inputs=input_ids,
@@ -107,11 +106,6 @@ def build_definitions(
             default_container=default_container,
         )
 
-    assets = build_asset_definitions(project_path)
+    assets = build_asset_definitions(project_path, runner=runner)
 
-    return dg.Definitions(
-        assets=assets,
-        resources={
-            "asp_runner": runner,
-        },
-    )
+    return dg.Definitions(assets=assets)

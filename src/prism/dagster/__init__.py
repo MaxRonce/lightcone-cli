@@ -14,6 +14,8 @@ from prism.dagster.targets import list_targets, load_target, save_target
 __all__ = [
     "ASPContainerRunner",
     "ASPIOManager",
+    "build_asset_definitions",
+    "build_definitions",
     "get_output_status",
     "get_all_universe_status",
     "list_targets",

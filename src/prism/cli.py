@@ -494,7 +494,6 @@ def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> N
     try:
         result = dg.materialize(
             assets=list(defs.get_asset_graph().assets),
-            resources=defs.get_resource_top_level_defs(),
             selection=selection,
         )
         if result.success:

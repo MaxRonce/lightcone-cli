@@ -1,7 +1,7 @@
 ---
 name: prism-new
 description: Create a new ASP analysis project - scope research question, structure chunks, identify decisions with literature support
-allowed-tools: Read, Write(asp.yaml), Write(universes/*), Write(CLAUDE.md), Write(.claude/hpc.yaml), Edit(asp.yaml), Edit(universes/*), Edit(CLAUDE.md), Edit(.claude/hpc.yaml), Glob, Grep, Bash(asp:*), Bash(mkdir:*), WebSearch, WebFetch, AskUserQuestion
+allowed-tools: Read, Write(asp.yaml), Write(universes/*), Write(CLAUDE.md), Edit(asp.yaml), Edit(universes/*), Edit(CLAUDE.md), Glob, Grep, Bash(asp:*), Bash(prism:*), Bash(mkdir:*), WebSearch, WebFetch, AskUserQuestion
 ---
 
 # /prism-new
@@ -151,9 +151,7 @@ Review the spec with the user. Update asp.yaml with any additions.
 
 ## Compute Configuration (optional)
 
-**Only activate this phase if `.claude/hpc.yaml` exists in the project.**
-
-Display stage banner:
+**Only activate this phase if the user mentions remote/HPC execution.**
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -161,27 +159,19 @@ Display stage banner:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Read `.claude/hpc.yaml` and show current resource limits:
+Check if any execution targets are configured:
 
-```
-Current HPC limits:
-  Max nodes/job: 4
-  Max walltime: 120 min
-  Max node-hours/session: 16
+```bash
+prism remote setup --list
 ```
 
-If the config has a `notes` field, display it:
+If the user needs to run on a remote cluster:
 
-```
-Compute notes:
-  <notes from config>
-```
-
-> "These are your current HPC resource limits. Want to adjust them for this analysis?"
+> "Do you need to configure a remote execution target (e.g., SLURM cluster)?"
 
 If yes:
-- Update `.claude/hpc.yaml` with new limits
-- Update the Compute Environment section in `CLAUDE.md` to reflect changes
+- Guide them through `prism remote setup <name>`
+- Note the target name for later use with `prism run --target <name>`
 
 If no, continue to Finalize.
 
