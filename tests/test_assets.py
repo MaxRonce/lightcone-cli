@@ -8,6 +8,7 @@ import pytest
 dagster = pytest.importorskip("dagster")
 
 import dagster as dg  # noqa: E402
+from asp.helpers import load_yaml  # noqa: E402
 
 from prism.dagster.assets import build_asset_definitions, build_definitions  # noqa: E402
 
@@ -51,7 +52,8 @@ class TestBuildAssetDefinitions:
     def test_generates_assets_for_outputs_with_recipes(
         self, sample_asp_yaml, mock_runner,
     ):
-        assets = build_asset_definitions(sample_asp_yaml, runner=mock_runner)
+        spec = load_yaml(sample_asp_yaml / "asp.yaml")
+        assets = build_asset_definitions(spec, runner=mock_runner)
         asset_keys = {a.key.path[-1] for a in assets}
         assert "cleaned" in asset_keys
         assert "result" in asset_keys
@@ -59,17 +61,19 @@ class TestBuildAssetDefinitions:
     def test_skips_outputs_without_recipes(
         self, sample_asp_yaml, mock_runner,
     ):
-        assets = build_asset_definitions(sample_asp_yaml, runner=mock_runner)
+        spec = load_yaml(sample_asp_yaml / "asp.yaml")
+        assets = build_asset_definitions(spec, runner=mock_runner)
         asset_keys = {a.key.path[-1] for a in assets}
         assert "external" not in asset_keys
 
     def test_asset_dependencies(self, sample_asp_yaml, mock_runner):
-        assets = build_asset_definitions(sample_asp_yaml, runner=mock_runner)
+        spec = load_yaml(sample_asp_yaml / "asp.yaml")
+        assets = build_asset_definitions(spec, runner=mock_runner)
         result_asset = next(a for a in assets if a.key.path[-1] == "result")
         # Check dependencies via specs
         dep_keys = set()
-        for spec in result_asset.specs:
-            for dep in spec.deps:
+        for spec_item in result_asset.specs:
+            for dep in spec_item.deps:
                 dep_keys.add(dep.asset_key.path[-1])
         assert "cleaned" in dep_keys
 

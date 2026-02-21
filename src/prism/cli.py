@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+import yaml
 from rich.console import Console
 
 console = Console()
@@ -103,9 +104,8 @@ def init(directory: Path, no_git: bool, no_venv: bool) -> None:
             },
         },
     }
-    import yaml as yaml_module
     (directory / "dagster.yaml").write_text(
-        yaml_module.dump(dagster_yaml_content, default_flow_style=False, sort_keys=False)
+        yaml.dump(dagster_yaml_content, default_flow_style=False, sort_keys=False)
     )
 
     # Create .gitignore
@@ -169,10 +169,17 @@ analysis:
       type: metric
       dtype: float
       description: "TODO: Describe your primary output metric"
+      recipe:
+        command: python scripts/compute.py
+        container: "python:3.12-slim"
 
     - id: conclusion
       type: report
       description: "Summary addressing the problem statement"
+      recipe:
+        command: python scripts/summarize.py
+        inputs: [main_result]
+        container: "python:3.12-slim"
 
 chunks:
   main:
@@ -477,7 +484,8 @@ def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> N
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
         raise SystemExit(1)
 
-    defs = build_definitions(project_path, target=target)
+    universe_id = universe or "baseline"
+    defs = build_definitions(project_path, target=target, universe_id=universe_id)
 
     console.print("[bold]Materializing outputs...[/bold]")
 
@@ -691,8 +699,6 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
 @click.argument("name")
 def remote_show(name: str) -> None:
     """Show a saved target configuration."""
-    import yaml as yaml_module
-
     from prism.dagster.targets import load_target
 
     config = load_target(name)
@@ -701,7 +707,35 @@ def remote_show(name: str) -> None:
         raise SystemExit(1)
 
     console.print(f"[bold]Target: {name}[/bold]\n")
-    console.print(yaml_module.dump(config, default_flow_style=False, sort_keys=False))
+    console.print(yaml.dump(config, default_flow_style=False, sort_keys=False))
+
+
+@remote.command("edit")
+@click.argument("name")
+def remote_edit(name: str) -> None:
+    """Open a saved target configuration in your editor.
+
+    Uses $EDITOR (or vi) to edit the target YAML file.
+
+    Examples:
+        prism remote edit perlmutter
+    """
+    from prism.dagster.targets import get_targets_dir, load_target
+
+    if load_target(name) is None:
+        console.print(f"[red]Error:[/red] No saved target '{name}'.")
+        console.print(f"Run [cyan]prism remote setup {name}[/cyan] to create one.")
+        raise SystemExit(1)
+
+    target_file = get_targets_dir() / f"{name}.yaml"
+    editor = os.environ.get("EDITOR", "vi")
+    try:
+        subprocess.run([editor, str(target_file)], check=True)
+        console.print(f"[green]✓[/green] Target '{name}' updated.")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        console.print(f"[red]Error:[/red] Could not open editor: {e}")
+        console.print(f"Edit manually: [cyan]{target_file}[/cyan]")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

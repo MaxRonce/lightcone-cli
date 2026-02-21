@@ -17,11 +17,12 @@ from prism.dagster.runner import ASPContainerRunner
 
 
 def build_asset_definitions(
-    project_path: Path,
+    spec: dict[str, Any],
     runner: ASPContainerRunner | None = None,
+    universe_id: str = "baseline",
+    project_path: Path | None = None,
 ) -> list[dg.AssetsDefinition]:
-    """Read asp.yaml and generate one @asset per output with a recipe."""
-    spec = load_yaml(project_path / "asp.yaml")
+    """Generate one @asset per output with a recipe."""
     outputs = get_outputs(spec)
 
     assets: list[dg.AssetsDefinition] = []
@@ -30,15 +31,32 @@ def build_asset_definitions(
         recipe = output_def.get("recipe")
         if not output_id or not recipe:
             continue
-        assets.append(_build_single_asset(output_id, recipe, runner))
+        assets.append(
+            _build_single_asset(output_id, recipe, runner, universe_id, project_path)
+        )
 
     return assets
+
+
+def _load_universe_params(
+    project_path: Path | None, universe_id: str
+) -> dict[str, Any]:
+    """Load universe decisions as params dict."""
+    if project_path is None:
+        return {}
+    universe_file = project_path / "universes" / f"{universe_id}.yaml"
+    if not universe_file.exists():
+        return {}
+    universe_data = load_yaml(universe_file)
+    return universe_data.get("decisions", {})
 
 
 def _build_single_asset(
     output_id: str,
     recipe: dict[str, Any],
     runner: ASPContainerRunner | None = None,
+    universe_id: str = "baseline",
+    project_path: Path | None = None,
 ) -> dg.AssetsDefinition:
     """Build a single Dagster asset from an output recipe."""
     input_ids = recipe.get("inputs") or []
@@ -55,7 +73,7 @@ def _build_single_asset(
         },
     )
     def _asset(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
-        universe_id = "baseline"  # TODO: from partition key when partitions are wired
+        params = _load_universe_params(project_path, universe_id)
         result = runner.execute(
             command=command,
             container=container,
@@ -63,6 +81,7 @@ def _build_single_asset(
             output_id=output_id,
             universe_id=universe_id,
             resources=resources,
+            params=params,
         )
         return dg.MaterializeResult(
             metadata={
@@ -78,6 +97,7 @@ def _build_single_asset(
 def build_definitions(
     project_path: Path,
     target: str | None = None,
+    universe_id: str = "baseline",
 ) -> dg.Definitions:
     """Build complete Dagster Definitions from an ASP project.
 
@@ -106,6 +126,8 @@ def build_definitions(
             default_container=default_container,
         )
 
-    assets = build_asset_definitions(project_path, runner=runner)
+    assets = build_asset_definitions(
+        spec, runner=runner, universe_id=universe_id, project_path=project_path
+    )
 
     return dg.Definitions(assets=assets)
