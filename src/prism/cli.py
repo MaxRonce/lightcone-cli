@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import click
-import yaml
 from rich.console import Console
 
 console = Console()
@@ -147,7 +146,6 @@ __pycache__/
 
 def _create_boilerplate_asp_yaml(directory: Path) -> None:
     """Create boilerplate asp.yaml with TODOs."""
-    from asp.helpers import save_yaml
 
     name = directory.name if directory != Path(".") else "My Analysis"
 
@@ -520,8 +518,9 @@ def status(universe: str | None) -> None:
         prism status
         prism status --universe baseline
     """
+    from asp.helpers import get_outputs, load_yaml
+
     from prism.dagster.status import get_all_universe_status, get_output_status
-    from asp.helpers import load_yaml, get_outputs
 
     project_path = Path.cwd()
     if not (project_path / "asp.yaml").exists():
@@ -694,6 +693,7 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
 def remote_show(name: str) -> None:
     """Show a saved target configuration."""
     import yaml as yaml_module
+
     from prism.dagster.targets import load_target
 
     config = load_target(name)

@@ -11,9 +11,8 @@ except ImportError:
         "Dagster is not installed. Install with: pip install prism[dagster]"
     )
 
-from asp.helpers import load_yaml, get_outputs
+from asp.helpers import get_outputs, load_yaml
 
-from prism.dagster.io_manager import ASPIOManager
 from prism.dagster.runner import ASPContainerRunner
 
 

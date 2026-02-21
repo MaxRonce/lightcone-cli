@@ -1,7 +1,10 @@
 """Tests for Dagster target configuration."""
 from __future__ import annotations
+
 from pathlib import Path
+
 import pytest
+
 from prism.dagster.targets import (
     list_targets,
     load_target,

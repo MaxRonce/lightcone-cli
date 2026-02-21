@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from asp.helpers import load_yaml, get_outputs
+from asp.helpers import get_outputs, load_yaml
 
 
 def get_output_status(

@@ -1,7 +1,8 @@
 """Tests for prism run CLI command."""
-from click.testing import CliRunner
-from prism.cli import main
 import pytest
+from click.testing import CliRunner
+
+from prism.cli import main
 
 
 @pytest.fixture

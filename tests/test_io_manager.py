@@ -1,6 +1,6 @@
 """Tests for ASP IO Manager."""
 from __future__ import annotations
-from pathlib import Path
+
 from prism.dagster.io_manager import ASPIOManager
 
 

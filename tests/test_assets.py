@@ -1,12 +1,13 @@
 """Tests for ASP asset factory."""
 from __future__ import annotations
-from pathlib import Path
+
 import pytest
 
 dagster = pytest.importorskip("dagster")
 
-import dagster as dg
-from prism.dagster.assets import build_asset_definitions, build_definitions
+import dagster as dg  # noqa: E402
+
+from prism.dagster.assets import build_asset_definitions, build_definitions  # noqa: E402
 
 
 @pytest.fixture

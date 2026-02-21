@@ -1,7 +1,8 @@
 """Tests for ASP Container Runner."""
 from __future__ import annotations
-from pathlib import Path
+
 import pytest
+
 from prism.dagster.runner import (
     ASPContainerRunner,
     translate_resources_to_docker_flags,
