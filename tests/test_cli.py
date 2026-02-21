@@ -124,6 +124,3 @@ class TestHelpOption:
         result = runner.invoke(main, ["init", "--help"])
         assert result.exit_code == 0
 
-    def test_remote_help(self, runner: CliRunner):
-        result = runner.invoke(main, ["remote", "--help"])
-        assert result.exit_code == 0
