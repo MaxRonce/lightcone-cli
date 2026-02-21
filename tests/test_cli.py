@@ -102,6 +102,13 @@ class TestInitCommand:
         assert result.exit_code == 0
         assert (project_dir / "asp.yaml").exists()
 
+    def test_init_creates_dagster_yaml(self, runner: CliRunner, tmp_path: Path):
+        """Test that init creates dagster.yaml."""
+        project_dir = tmp_path / "dagster-test"
+        result = runner.invoke(main, ["init", str(project_dir), "--no-git", "--no-venv"])
+        assert result.exit_code == 0
+        assert (project_dir / "dagster.yaml").exists()
+
 
 class TestVersionOption:
     """Tests for version option."""
@@ -122,5 +129,9 @@ class TestHelpOption:
 
     def test_init_help(self, runner: CliRunner):
         result = runner.invoke(main, ["init", "--help"])
+        assert result.exit_code == 0
+
+    def test_remote_help(self, runner: CliRunner):
+        result = runner.invoke(main, ["remote", "--help"])
         assert result.exit_code == 0
 
