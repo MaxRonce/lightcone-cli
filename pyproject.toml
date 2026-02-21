@@ -27,8 +27,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-canvas = [
-    "asp-canvas>=0.1",
+dagster = [
+    "dagster>=1.9",
+    "dagster-webserver>=1.9",
+    "dagster-docker>=0.25",
 ]
 dev = [
     "pytest>=8.0",
