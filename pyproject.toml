@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "asp>=0.0.6",
+    "asp @ git+https://github.com/LightconeResearch/ASP.git@feat/inline-recipes",
     "click>=8.0",
     "pyyaml>=6.0",
     "rich>=13.0",
@@ -46,6 +46,9 @@ prism = "prism.cli:main"
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.version]
 source = "vcs"
