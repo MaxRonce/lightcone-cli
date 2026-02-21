@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+import yaml
 from rich.console import Console
 
 console = Console()
@@ -95,9 +96,23 @@ def init(directory: Path, no_git: bool, no_venv: bool) -> None:
     for subdir in subdirs:
         (directory / subdir).mkdir(parents=True, exist_ok=True)
 
+    # Create dagster.yaml for Dagster instance configuration
+    dagster_yaml_content = {
+        "storage": {
+            "sqlite": {
+                "base_dir": "results/.dagster",
+            },
+        },
+    }
+    import yaml as yaml_module
+    (directory / "dagster.yaml").write_text(
+        yaml_module.dump(dagster_yaml_content, default_flow_style=False, sort_keys=False)
+    )
+
     # Create .gitignore
     gitignore = """# ASP Analysis
 results/
+results/.dagster/
 __pycache__/
 *.py[cod]
 .venv/
@@ -421,6 +436,273 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
         )
 
     return True
+
+
+# =============================================================================
+# Dagster execution commands
+# =============================================================================
+
+
+def _require_dagster():
+    """Check that dagster is installed, exit with helpful message if not."""
+    try:
+        import dagster  # noqa: F401
+    except ImportError:
+        console.print("[red]Error:[/red] Dagster is not installed.")
+        console.print("  Install with: [cyan]pip install prism\\[dagster][/cyan]")
+        raise SystemExit(1)
+
+
+@main.command()
+@click.argument("outputs", nargs=-1)
+@click.option("--universe", "-u", default=None, help="Universe to materialize for")
+@click.option("--target", "-t", default=None, help="Execution target (e.g., perlmutter)")
+def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> None:
+    """Materialize ASP outputs via Dagster.
+
+    Runs recipes to produce outputs. Without arguments, materializes all
+    outputs for all universes.
+
+    Examples:
+        prism run                           # all outputs, all universes
+        prism run accuracy                  # specific output
+        prism run --universe baseline       # specific universe
+        prism run accuracy -u baseline      # specific output + universe
+        prism run --target perlmutter       # run on SLURM
+    """
+    _require_dagster()
+
+    from prism.dagster.assets import build_definitions
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    defs = build_definitions(project_path, target=target)
+
+    console.print("[bold]Materializing outputs...[/bold]")
+
+    import dagster as dg
+
+    # Select assets to materialize
+    all_assets = list(defs.get_all_asset_specs())
+    if outputs:
+        selection = list(outputs)
+    else:
+        selection = [spec.key.path[-1] for spec in all_assets]
+
+    # Execute
+    try:
+        result = dg.materialize(
+            assets=list(defs.get_asset_graph().assets),
+            resources=defs.get_resource_top_level_defs(),
+            selection=selection,
+        )
+        if result.success:
+            console.print("[green]✓[/green] Materialization complete")
+        else:
+            console.print("[red]✗[/red] Materialization failed")
+            raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise SystemExit(1)
+
+
+@main.command()
+@click.option("--universe", "-u", default=None, help="Show status for specific universe")
+def status(universe: str | None) -> None:
+    """Show materialization status of all outputs.
+
+    Displays a table of outputs vs universes with materialization state.
+
+    Examples:
+        prism status
+        prism status --universe baseline
+    """
+    from prism.dagster.status import get_all_universe_status, get_output_status
+    from asp.helpers import load_yaml, get_outputs
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    spec = load_yaml(project_path / "asp.yaml")
+    name = spec.get("name", "Unknown")
+    outputs = get_outputs(spec)
+    recipe_outputs = [o for o in outputs if o.get("recipe")]
+
+    if universe:
+        all_status = {universe: get_output_status(project_path, universe)}
+    else:
+        all_status = get_all_universe_status(project_path)
+
+    if not all_status:
+        console.print("[yellow]No universes found.[/yellow]")
+        return
+
+    from rich.table import Table
+
+    table = Table(title=f"{name} — Materialization Status")
+    table.add_column("Output", style="cyan")
+    for uid in all_status:
+        table.add_column(uid)
+
+    materialized = 0
+    total = 0
+    for out in recipe_outputs:
+        out_id = out["id"]
+        row = [out_id]
+        for uid, universe_status in all_status.items():
+            s = universe_status.get(out_id, "not_run")
+            total += 1
+            if s == "materialized":
+                materialized += 1
+                row.append("[green]ok[/green]")
+            else:
+                row.append("[dim]not run[/dim]")
+        table.add_row(*row)
+
+    console.print(table)
+    console.print(f"\n  [green]{materialized}[/green] materialized  "
+                  f"[dim]{total - materialized}[/dim] pending")
+
+
+@main.command()
+@click.option("--port", "-p", default=3000, type=int, help="Port for Dagster webserver")
+def dev(port: int) -> None:
+    """Launch Dagster webserver UI for the current project.
+
+    Opens a web UI showing the asset graph, run history, and
+    materialization status.
+
+    Examples:
+        prism dev
+        prism dev --port 8080
+    """
+    _require_dagster()
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    console.print(f"[bold]Starting Dagster webserver on port {port}...[/bold]")
+    console.print(f"  Open [cyan]http://localhost:{port}[/cyan] in your browser")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    try:
+        subprocess.run(
+            ["dagster-webserver", "-h", "0.0.0.0", "-p", str(port)],
+            check=True,
+        )
+    except KeyboardInterrupt:
+        console.print("\n[dim]Dagster webserver stopped[/dim]")
+    except FileNotFoundError:
+        console.print("[red]Error:[/red] dagster-webserver not found.")
+        console.print("  Install with: [cyan]pip install prism\\[dagster][/cyan]")
+        raise SystemExit(1)
+
+
+# =============================================================================
+# Remote target commands (Dagster executor configuration)
+# =============================================================================
+
+
+@main.group()
+def remote() -> None:
+    """Manage execution targets (Docker, SLURM)."""
+    pass
+
+
+@remote.command("setup")
+@click.argument("name", required=False)
+@click.option("--list", "list_targets_flag", is_flag=True, help="List saved targets")
+def remote_setup(name: str | None, list_targets_flag: bool) -> None:
+    """Configure an execution target.
+
+    Sets up connection details, scheduler config, and resource limits
+    for remote execution backends (SLURM, etc.).
+
+    Examples:
+        prism remote setup perlmutter
+        prism remote setup --list
+    """
+    from prism.dagster.targets import list_targets, save_target
+
+    if list_targets_flag:
+        saved = list_targets()
+        if not saved:
+            console.print("[dim]No saved targets.[/dim]")
+            console.print("Run [cyan]prism remote setup <name>[/cyan] to configure one.")
+        else:
+            console.print("[bold]Saved targets:[/bold]")
+            for t in saved:
+                console.print(f"  - {t}")
+        return
+
+    if name is None:
+        console.print("[red]Error:[/red] Provide a target name.")
+        raise SystemExit(1)
+
+    console.print(f"\n[bold]Setting up target: [cyan]{name}[/cyan][/bold]\n")
+
+    backend = click.prompt(
+        "  Backend", type=click.Choice(["slurm", "pbs"]), default="slurm"
+    )
+    hostname = click.prompt("  Hostname")
+    username = click.prompt("  Username", default=os.environ.get("USER", ""))
+    account = click.prompt("  Account/allocation")
+    partition = click.prompt("  Partition", default="regular")
+    container_runtime = click.prompt(
+        "  Container runtime",
+        type=click.Choice(["shifter", "podman-hpc", "singularity"]),
+        default="shifter",
+    )
+
+    console.print("\n  [bold]Resource limits[/bold]")
+    max_nodes = click.prompt("    Max nodes per job", type=int, default=4)
+    max_walltime = click.prompt("    Max walltime (minutes)", type=int, default=240)
+    max_concurrent = click.prompt("    Max concurrent jobs", type=int, default=8)
+    max_node_hours = click.prompt("    Max node-hours per session", type=int, default=32)
+
+    config = {
+        "name": name,
+        "backend": backend,
+        "connection": {"hostname": hostname, "username": username},
+        "scheduler": {
+            "account": account,
+            "partition": partition,
+            "container_runtime": container_runtime,
+        },
+        "resource_limits": {
+            "max_nodes": max_nodes,
+            "max_walltime_minutes": max_walltime,
+            "max_concurrent_jobs": max_concurrent,
+            "max_node_hours_per_session": max_node_hours,
+        },
+    }
+
+    path = save_target(name, config)
+    console.print(f"\n[green]✓[/green] Saved to [cyan]{path}[/cyan]")
+    console.print(f"Use with: [cyan]prism run --target {name}[/cyan]")
+
+
+@remote.command("show")
+@click.argument("name")
+def remote_show(name: str) -> None:
+    """Show a saved target configuration."""
+    import yaml as yaml_module
+    from prism.dagster.targets import load_target
+
+    config = load_target(name)
+    if config is None:
+        console.print(f"[red]Error:[/red] No saved target '{name}'.")
+        raise SystemExit(1)
+
+    console.print(f"[bold]Target: {name}[/bold]\n")
+    console.print(yaml_module.dump(config, default_flow_style=False, sort_keys=False))
 
 
 if __name__ == "__main__":
