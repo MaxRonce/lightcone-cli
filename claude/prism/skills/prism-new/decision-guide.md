@@ -32,8 +32,6 @@ decisions:
   decision_id:           # lowercase_with_underscores
     label: "Human Name"  # Short, descriptive
     type: method         # method | data | parameter
-    importance: 2        # 1=critical, 5=minor
-    reviewed: false      # Has user weighed in?
     rationale: "Why this matters for the analysis"
     default: option_a    # Required — what to use if not specified
     options:
@@ -80,17 +78,9 @@ When the user says:
 - "It depends on..." → decision
 - "I've seen people do it both ways" → decision
 
-## Importance Levels
+## Decision Priority
 
-| Level | Meaning | Example |
-|-------|---------|---------|
-| 1 | Critical — changes conclusions | prior specification in Bayesian analysis |
-| 2 | Major — affects quality significantly | model architecture choice |
-| 3 | Moderate — noticeable impact | normalization method |
-| 4 | Minor — small effect | random seed, minor hyperparameters |
-| 5 | Trivial — negligible impact | logging verbosity |
-
-Focus on levels 1-3. Don't clutter with level 4-5 decisions unless the user cares.
+Focus on decisions that matter — choices that could change conclusions or significantly affect quality. Don't clutter with trivial decisions (random seed, logging verbosity) unless the user cares.
 
 ## Constraints Between Decisions
 
@@ -105,13 +95,6 @@ options:
 ```
 
 Constraints reference other decisions in the same analysis (or sub-analysis).
-
-## Reviewed vs Unreviewed
-
-- **reviewed: true** — User explicitly discussed and chose this
-- **reviewed: false** — Agent inferred or used sensible default
-
-During the build phase, unreviewed decisions get surfaced for confirmation before implementation.
 
 ## Common Mistakes
 
@@ -129,7 +112,6 @@ During the build phase, unreviewed decisions get surfaced for confirmation befor
 prior_width:
   label: "Prior Width"
   type: parameter
-  importance: 1
   rationale: "Wide priors favor null in Bayes factors; narrow priors assume more prior knowledge"
   default: weakly_informative
   options:

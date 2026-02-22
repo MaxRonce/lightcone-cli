@@ -146,9 +146,9 @@ As methods are mentioned, note papers for later:
 - Note any papers/methods the user mentions
 - Don't extract insights yet — that's a separate step with `/prism-insights`
 
-### Tracking Reviewed Decisions
+### Tracking Decision Review Status
 
-When the user explicitly weighs in on a decision, mark it `reviewed: true` in the spec. Decisions you infer or fill with defaults stay unreviewed.
+When the user explicitly weighs in on a decision, note it in `CLAUDE.md` (in the Key Decisions section). Decisions you infer or fill with defaults should be surfaced for confirmation during the build phase.
 
 ---
 
@@ -226,7 +226,7 @@ Read the existing `CLAUDE.md` (created by `prism init`). Replace the
 (Repeat for each sub-analysis, if any)
 
 ### Key Decisions
-<For each reviewed decision, briefly note what it controls and the default>
+<For each decision the user discussed, briefly note what it controls and the default. Mark decisions the agent inferred that still need user confirmation.>
 
 ### Implementation Notes
 <Any domain-specific guidance that came up during the conversation —
@@ -248,7 +248,7 @@ Present a brief summary:
 ```
 
 - Description
-- Key decisions (noting which are ✓ reviewed vs ○ unreviewed)
+- Key decisions (noting which the user discussed vs which were agent-inferred)
 
 Then:
 
@@ -271,10 +271,10 @@ When ready to proceed:
 List sections and their status:
 
 ```
-| Section       | Decisions | Reviewed | Outputs |
-|---------------|-----------|----------|---------|
-| (top-level)   | 3         | 2/3      | 2       |
-| sub_analysis  | ...       | ...      | ...     |
+| Section       | Decisions | Outputs |
+|---------------|-----------|---------|
+| (top-level)   | 3         | 2       |
+| sub_analysis  | ...       | ...     |
 ```
 
 Then the Next Up block:

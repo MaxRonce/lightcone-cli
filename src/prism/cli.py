@@ -168,7 +168,6 @@ inputs:
 outputs:
   - id: main_result
     type: metric
-    dtype: float
     description: "TODO: Describe your primary output metric"
     recipe:
       command: python scripts/compute.py

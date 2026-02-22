@@ -339,27 +339,33 @@ For each insight relevant to the analysis, use W3C-compliant selectors for evide
 ```yaml
 insights:
   insight_id:  # lowercase_with_underscores
+    id: insight_id
     claim: "One sentence stating what we learned"
+    created_at: "2025-01-15T10:30:00"
     evidence:
       - id: e1
         doi: "10.1234/paper-doi"
         # For quotes (W3C TextQuoteSelector):
         quote:
+          type: TextQuoteSelector
           exact: "Exact text from the paper"
           prefix: "text before for disambiguation"
           suffix: "text after for disambiguation"
         location:
+          type: FragmentSelector
           page: 5
       # For figures (FigureSelector):
       - id: e2
         doi: "10.1234/paper-doi"
         figure:
+          type: FigureSelector
           label: "Figure 3a"
           caption: "Description of what it shows"
       # For tables (TableSelector):
       - id: e3
         doi: "10.1234/paper-doi"
         table:
+          type: TableSelector
           label: "Table 1"
           region: "row 3, accuracy column"
     scope: "Context where this applies (optional)"
@@ -398,10 +404,14 @@ Reference an output by its ID:
 ```yaml
 insights:
   prior_finding:
+    id: prior_finding
     claim: "StandardScaler outperforms MinMaxScaler on this dataset"
+    created_at: "2025-01-15T10:30:00"
     evidence:
       - id: e1
         artifact: "accuracy"
+        quote:
+          exact: "StandardScaler achieved 97% accuracy vs 91% for MinMaxScaler"
         checksum:
           algorithm: sha256
           value: "abc123..."

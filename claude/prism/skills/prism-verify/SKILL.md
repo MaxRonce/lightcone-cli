@@ -75,8 +75,7 @@ Check that `results/<universe_id>/run_metadata.yaml` exists and is consistent.
 For each `type: metric` output where the result file exists:
 
 1. Check it has `{"value": ...}` JSON structure
-2. If `dtype` declared, check the value type matches
-3. If `range: [min, max]` declared, check value is within bounds
+2. Check the value is a valid number (int or float)
 
 ---
 

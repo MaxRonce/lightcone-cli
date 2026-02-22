@@ -156,8 +156,7 @@ insights:
   <insight_id>:
     id: <insight_id>
     claim: "<What we learned from this finding>"
-    created_at: "<current ISO timestamp>"
-    verified: true  # All quotes verified before returning
+    created_at: "<current ISO 8601 timestamp, e.g. 2025-01-15T10:30:00>"
     evidence:
       - id: ev1
         doi: "<paper DOI>"

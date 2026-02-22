@@ -74,9 +74,9 @@ Also available:
 ## Tables
 
 ```
-| Section | Decisions | Reviewed | Outputs |
-|---------|-----------|----------|---------|
-| main    | 3         | 2/3      | 2       |
+| Section | Decisions | Outputs |
+|---------|-----------|---------|
+| main    | 3         | 2       |
 ```
 
 ---
