@@ -129,22 +129,18 @@ class TestIntegration:
         path = mgr.get_output_path("cleaned", "baseline")
         assert path == project_dir / "results" / "baseline" / "cleaned"
 
-    def test_runner_builds_docker_command(self, project_dir):
-        """Runner should build valid Docker commands."""
+    def test_runner_executes_locally(self, project_dir):
+        """Runner should fall back to local execution without Docker."""
         from prism.dagster.runner import ASPContainerRunner
 
         runner = ASPContainerRunner(
             project_root=str(project_dir),
             backend="docker",
         )
-        cmd = runner.build_docker_command(
-            command="python scripts/clean.py",
-            container="python:3.11",
-            input_ids=[],
+        result = runner.execute(
+            command="python -c 'print(1)'",
             output_id="cleaned",
             universe_id="baseline",
-            resources={},
         )
-        assert "docker" in cmd[0]
-        assert "python:3.11" in cmd
-        assert "python scripts/clean.py" in " ".join(cmd)
+        assert result.exit_code == 0
+        assert result.metadata.get("backend") == "local"

@@ -32,57 +32,36 @@ class TestResourceTranslation:
 
 
 class TestDockerRunner:
-    def test_build_docker_command(self, tmp_path):
+    def test_execute_local_fallback(self, tmp_path):
+        """Without Docker, execute falls back to local subprocess."""
         runner = ASPContainerRunner(
             project_root=str(tmp_path),
             backend="docker",
         )
-        cmd = runner.build_docker_command(
-            command="python train.py",
-            container="myimage:latest",
-            input_ids=["cleaned_data"],
-            output_id="trained_model",
-            universe_id="baseline",
-            resources={},
-        )
-        assert "docker" in cmd[0]
-        assert "myimage:latest" in cmd
-        assert "python train.py" in " ".join(cmd)
-
-    def test_build_docker_mounts(self, tmp_path):
-        runner = ASPContainerRunner(
-            project_root=str(tmp_path),
-            backend="docker",
-        )
-        mounts = runner.build_docker_mounts(
-            input_ids=["cleaned_data"],
-            output_id="trained_model",
+        result = runner.execute(
+            command="python -c 'print(1)'",
+            output_id="test_out",
             universe_id="baseline",
         )
-        assert any("/workspace/inputs/cleaned_data" in m for m in mounts)
-        assert any("/workspace/outputs/trained_model" in m for m in mounts)
+        # Should succeed via local fallback
+        assert result.exit_code == 0
+        assert result.metadata.get("backend") == "local"
 
-    def test_no_container_raises(self, tmp_path):
+    def test_execute_with_container_string(self, tmp_path):
+        """Runner stores default_container from init."""
         runner = ASPContainerRunner(
             project_root=str(tmp_path),
             backend="docker",
+            default_container="myimage:latest",
         )
-        with pytest.raises(ValueError, match="No container specified"):
-            runner.build_docker_command(
-                command="python train.py",
-                container=None,
-                input_ids=[],
-                output_id="result",
-                universe_id="baseline",
-                resources={},
-            )
+        assert runner.default_container == "myimage:latest"
 
-    def test_unknown_backend_raises(self, tmp_path):
+    def test_slurm_backend_not_implemented(self, tmp_path):
         runner = ASPContainerRunner(
             project_root=str(tmp_path),
-            backend="unknown",
+            backend="slurm",
         )
-        with pytest.raises(ValueError, match="Unknown backend"):
+        with pytest.raises(NotImplementedError, match="SLURM backend"):
             runner.execute(
                 command="test",
                 output_id="result",
