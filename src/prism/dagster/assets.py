@@ -4,13 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-try:
-    import dagster as dg
-except ImportError:
-    raise ImportError(
-        "Dagster is not installed. Install with: pip install prism[dagster]"
-    )
-
+import dagster as dg
 from asp.helpers import get_outputs, load_yaml
 
 from prism.container import resolve_container_spec

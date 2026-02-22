@@ -4,14 +4,11 @@ from __future__ import annotations
 import unittest.mock
 from unittest.mock import MagicMock
 
+import dagster as dg
 import pytest
+from asp.helpers import load_yaml
 
-dagster = pytest.importorskip("dagster")
-
-import dagster as dg  # noqa: E402
-from asp.helpers import load_yaml  # noqa: E402
-
-from prism.dagster.assets import build_asset_definitions, build_definitions  # noqa: E402
+from prism.dagster.assets import build_asset_definitions, build_definitions
 
 
 @pytest.fixture

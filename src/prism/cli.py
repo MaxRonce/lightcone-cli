@@ -463,16 +463,6 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 # =============================================================================
 
 
-def _require_dagster():
-    """Check that dagster is installed, exit with helpful message if not."""
-    try:
-        import dagster  # noqa: F401
-    except ImportError:
-        console.print("[red]Error:[/red] Dagster is not installed.")
-        console.print("  Install with: [cyan]pip install prism\\[dagster][/cyan]")
-        raise SystemExit(1)
-
-
 @main.command()
 @click.argument("outputs", nargs=-1)
 @click.option("--universe", "-u", default=None, help="Universe to materialize for")
@@ -498,8 +488,6 @@ def run(
         prism run --target perlmutter       # run on SLURM
         prism run --no-build                # skip container builds
     """
-    _require_dagster()
-
     from prism.dagster.assets import build_definitions
 
     project_path = Path.cwd()
@@ -701,8 +689,6 @@ def dev(port: int) -> None:
         prism dev
         prism dev --port 8080
     """
-    _require_dagster()
-
     project_path = Path.cwd()
     if not (project_path / "asp.yaml").exists():
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
