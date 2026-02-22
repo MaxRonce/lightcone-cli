@@ -7,7 +7,11 @@ Provides:
 - get_output_status(): Query materialization status
 """
 from prism.dagster.io_manager import ASPIOManager
-from prism.dagster.runner import ASPContainerRunner
+from prism.dagster.runner import (
+    ASPContainerRunner,
+    generate_sbatch_script,
+    translate_resources_to_slurm_directives,
+)
 from prism.dagster.status import get_all_universe_status, get_output_status
 from prism.dagster.targets import list_targets, load_target, save_target
 
@@ -16,11 +20,13 @@ __all__ = [
     "ASPIOManager",
     "build_asset_definitions",
     "build_definitions",
+    "generate_sbatch_script",
     "get_output_status",
     "get_all_universe_status",
     "list_targets",
     "load_target",
     "save_target",
+    "translate_resources_to_slurm_directives",
 ]
 
 

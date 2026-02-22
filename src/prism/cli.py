@@ -763,9 +763,20 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
     partition = click.prompt("  Partition", default="regular")
     container_runtime = click.prompt(
         "  Container runtime",
-        type=click.Choice(["shifter", "podman-hpc", "singularity"]),
-        default="shifter",
+        type=click.Choice(["podman-hpc", "shifter", "singularity"]),
+        default="podman-hpc",
     )
+
+    qos = click.prompt("  QOS", default="regular")
+    constraint = click.prompt(
+        "  Constraint (e.g., cpu, gpu, gpu&hbm80g)", default="",
+    )
+
+    # Container runtime flags (NERSC-specific: --gpu, --mpi, --nccl, etc.)
+    container_flags_str = click.prompt(
+        "  Container flags (e.g., --gpu --mpi --nccl)", default="",
+    )
+    container_flags = container_flags_str.split() if container_flags_str.strip() else []
 
     console.print("\n  [bold]Resource limits[/bold]")
     max_nodes = click.prompt("    Max nodes per job", type=int, default=4)
@@ -773,15 +784,23 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
     max_concurrent = click.prompt("    Max concurrent jobs", type=int, default=8)
     max_node_hours = click.prompt("    Max node-hours per session", type=int, default=32)
 
+    scheduler_config: dict[str, Any] = {
+        "account": account,
+        "partition": partition,
+        "container_runtime": container_runtime,
+    }
+    if qos:
+        scheduler_config["qos"] = qos
+    if constraint:
+        scheduler_config["constraint"] = constraint
+    if container_flags:
+        scheduler_config["container_flags"] = container_flags
+
     config = {
         "name": name,
         "backend": backend,
         "connection": {"hostname": hostname, "username": username},
-        "scheduler": {
-            "account": account,
-            "partition": partition,
-            "container_runtime": container_runtime,
-        },
+        "scheduler": scheduler_config,
         "resource_limits": {
             "max_nodes": max_nodes,
             "max_walltime_minutes": max_walltime,
