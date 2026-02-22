@@ -157,6 +157,9 @@ name: "{name}"
 description: |
   TODO: What research question are you trying to answer?
 
+container:
+  build: Containerfile
+
 inputs:
   - id: primary_data
     type: data
@@ -169,7 +172,6 @@ outputs:
     description: "TODO: Describe your primary output metric"
     recipe:
       command: python scripts/compute.py
-      container: "python:3.12-slim"
 
   - id: conclusion
     type: report
@@ -177,7 +179,6 @@ outputs:
     recipe:
       command: python scripts/summarize.py
       inputs: [main_result]
-      container: "python:3.12-slim"
 
 decisions:
   example_method:
@@ -195,6 +196,26 @@ decisions:
         description: "TODO: Describe option B"
 """
     (directory / "asp.yaml").write_text(asp_yaml)
+
+    # Create Containerfile
+    containerfile = """\
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+"""
+    (directory / "Containerfile").write_text(containerfile)
+
+    # Create requirements.txt
+    requirements = """\
+numpy
+pandas
+"""
+    (directory / "requirements.txt").write_text(requirements)
 
     # Create baseline universe
     baseline_universe = """# Baseline Universe
@@ -457,11 +478,18 @@ def _require_dagster():
 @click.argument("outputs", nargs=-1)
 @click.option("--universe", "-u", default=None, help="Universe to materialize for")
 @click.option("--target", "-t", default=None, help="Execution target (e.g., perlmutter)")
-def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> None:
+@click.option("--no-build", is_flag=True, help="Skip automatic container image builds")
+def run(
+    outputs: tuple[str, ...],
+    universe: str | None,
+    target: str | None,
+    no_build: bool,
+) -> None:
     """Materialize ASP outputs via Dagster.
 
     Runs recipes to produce outputs. Without arguments, materializes all
-    outputs for all universes.
+    outputs for all universes. Container build specs are automatically
+    built before execution unless --no-build is given.
 
     Examples:
         prism run                           # all outputs, all universes
@@ -469,6 +497,7 @@ def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> N
         prism run --universe baseline       # specific universe
         prism run accuracy -u baseline      # specific output + universe
         prism run --target perlmutter       # run on SLURM
+        prism run --no-build                # skip container builds
     """
     _require_dagster()
 
@@ -480,7 +509,9 @@ def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> N
         raise SystemExit(1)
 
     universe_id = universe or "baseline"
-    defs = build_definitions(project_path, target=target, universe_id=universe_id)
+    defs = build_definitions(
+        project_path, target=target, universe_id=universe_id, no_build=no_build,
+    )
 
     console.print("[bold]Materializing outputs...[/bold]")
 
@@ -507,6 +538,63 @@ def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> N
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
+
+
+@main.command()
+@click.option("--force", is_flag=True, help="Rebuild images even if they already exist")
+def build(force: bool) -> None:
+    """Build container images from Containerfile specs in asp.yaml.
+
+    Scans the analysis specification for container build specs (both
+    analysis-level and per-recipe) and builds any missing images.
+    Images are content-addressed — rebuilds only happen when the
+    Containerfile or dependency files change.
+
+    Examples:
+        prism build             # build missing images
+        prism build --force     # rebuild all images
+    """
+    from asp.helpers import get_outputs, load_yaml
+
+    from prism.container import ContainerBuildError, resolve_container_spec
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    spec = load_yaml(project_path / "asp.yaml")
+    project_name = spec.get("name") or project_path.name
+
+    # Collect all unique container build specs.
+    build_specs: list[tuple[str, dict]] = []  # (label, spec_dict)
+    raw_default = spec.get("container")
+    if isinstance(raw_default, dict) and "build" in raw_default:
+        build_specs.append(("analysis-level", raw_default))
+
+    for output_def in get_outputs(spec):
+        recipe = output_def.get("recipe")
+        if not recipe:
+            continue
+        raw = recipe.get("container")
+        if isinstance(raw, dict) and "build" in raw:
+            label = f"recipe:{output_def.get('id', '?')}"
+            build_specs.append((label, raw))
+
+    if not build_specs:
+        console.print("[dim]No container build specs found in asp.yaml.[/dim]")
+        return
+
+    console.print(f"[bold]Found {len(build_specs)} container build spec(s)[/bold]\n")
+
+    for label, bspec in build_specs:
+        try:
+            tag = resolve_container_spec(
+                bspec, project_path, project_name, force=force,
+            )
+            console.print(f"  [green]built[/green]  {label} -> {tag}")
+        except ContainerBuildError as e:
+            console.print(f"  [red]fail[/red]   {label}: {e}")
 
 
 @main.command()
@@ -577,6 +665,29 @@ def status(universe: str | None) -> None:
     console.print(table)
     console.print(f"\n  Recipes: {recipe_count}/{total_outputs} outputs integrated")
     console.print(f"  Materialized: {materialized}/{total_cells} runs")
+
+    # Show container status
+    from prism.container import get_container_status
+
+    raw_container = spec.get("container")
+    cstatus = get_container_status(raw_container, project_path, name)
+    if cstatus.type == "prebuilt":
+        console.print(f"  Container: prebuilt [cyan]{cstatus.image}[/cyan]")
+    elif cstatus.type == "build":
+        if cstatus.extra.get("error"):
+            console.print(
+                f"  Container: build [red]{cstatus.extra['error']}[/red]"
+            )
+        elif cstatus.exists:
+            console.print(
+                f"  Container: build {cstatus.containerfile} "
+                f"[green]{cstatus.image} (built)[/green]"
+            )
+        else:
+            console.print(
+                f"  Container: build {cstatus.containerfile} "
+                f"[yellow]{cstatus.image} (not built)[/yellow]"
+            )
 
 
 @main.command()

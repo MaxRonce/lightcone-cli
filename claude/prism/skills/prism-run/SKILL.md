@@ -18,7 +18,7 @@ Before running anything:
 
 1. **Validate the spec**: `asp validate asp.yaml`
 2. **Check recipe coverage**: Run `prism status` to see which outputs have recipes — only those will be executed
-3. **Verify container images**: If recipes reference container images, ensure they're accessible
+3. **Build containers**: If using `container: {build: Containerfile}`, run `prism build` (or let `prism run` auto-build)
 4. **Check universe exists**: `ls universes/` — at least `baseline.yaml` should exist
 
 ```
@@ -116,6 +116,7 @@ When execution fails:
 |---------|----------|
 | "No container specified" | Add `container:` to the recipe or set analysis-level default |
 | "Dagster not installed" | `pip install prism[dagster]` |
+| Container not built | Run `prism build` or remove `--no-build` flag |
 | Container image not found | Check image reference, ensure Docker can pull it |
 | Recipe input not found | Check that input outputs have been materialized first |
 | Permission denied | Check Docker permissions or SLURM account config |

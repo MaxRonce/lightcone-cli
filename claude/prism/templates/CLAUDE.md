@@ -60,9 +60,10 @@ become `pending` until materialized.
 #### Step 3: Materialize
 
 ```bash
-prism run                           # execute all recipes via Dagster
+prism build                         # build container images (if using build specs)
+prism run                           # execute all recipes via Dagster (auto-builds)
 prism run accuracy -u baseline      # specific output + universe
-prism status                        # check what's materialized
+prism status                        # check what's materialized + container status
 prism dev                           # Dagster webserver UI
 ```
 

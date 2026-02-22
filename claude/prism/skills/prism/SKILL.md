@@ -48,7 +48,7 @@ An ASP analysis (`asp.yaml`) is a **self-similar** specification. Every level ha
 - `decisions`: analysis choice points (methods, parameters, data choices)
 - `insights`: scientific knowledge from papers or prior analyses
 - `analyses`: optional sub-analyses (self-similar nesting)
-- `container`: default container image for recipes
+- `container`: default container image for recipes — either a pre-built image string (e.g., `"python:3.12-slim"`) or a build spec (`{build: Containerfile}`)
 
 A simple analysis puts everything at the top level. Complex analyses use `analyses:` for multi-stage pipelines where each sub-analysis has its own inputs, outputs, and decisions.
 
@@ -151,9 +151,12 @@ asp schema show analysis          # Show JSON schema
 
 # Prism CLI — agent operations
 prism init <directory>            # Create full project with Claude Code config
-prism run                         # Execute recipes via Dagster
+prism build                       # Build container images from specs
+prism build --force               # Rebuild all images
+prism run                         # Execute recipes via Dagster (auto-builds)
+prism run --no-build              # Execute without building containers
 prism run accuracy --universe baseline  # Run specific output
-prism status                      # Show materialization status
+prism status                      # Show materialization + container status
 prism dev                         # Launch Dagster webserver UI
 prism remote setup perlmutter     # Configure execution target
 ```
@@ -192,10 +195,25 @@ outputs:
 
 Recipe fields: `command` (required), `inputs` (optional), `container` (optional), `resources` (optional).
 
+The `container` field can be a pre-built image string or a build spec:
+
+```yaml
+# Pre-built image
+container: "python:3.12-slim"
+
+# Build from Containerfile (content-addressed, auto-cached)
+container:
+  build: Containerfile
+```
+
+When using a build spec at the analysis level, all recipes inherit it. Per-recipe `container:` overrides the default.
+
 ```bash
-prism run                    # materialize all outputs
+prism build                  # build container images from specs
+prism run                    # materialize all outputs (auto-builds)
 prism run accuracy           # materialize specific output
-prism status                 # check materialization status
+prism run --no-build         # skip auto-building containers
+prism status                 # check materialization + container status
 prism dev                    # Dagster webserver UI
 ```
 

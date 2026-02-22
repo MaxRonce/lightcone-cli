@@ -85,6 +85,16 @@ ls results/<universe_id>/
 ls results/<universe_id>/<output_id>/
 ```
 
+## Container Status
+
+`prism status` also shows the analysis-level container configuration:
+
+- `prebuilt: python:3.12-slim` — using a pre-built image
+- `build: Containerfile -> prism-proj-abc123 (built)` — build spec, image exists
+- `build: Containerfile -> prism-proj-abc123 (not built)` — build spec, needs `prism build`
+
+To build missing images: `prism build`
+
 ## Rules
 
 - **Status is filesystem-based** — it checks if output directories contain files

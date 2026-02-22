@@ -1,6 +1,7 @@
 """Tests for ASP asset factory."""
 from __future__ import annotations
 
+import unittest.mock
 from unittest.mock import MagicMock
 
 import pytest
@@ -80,3 +81,38 @@ class TestBuildAssetDefinitions:
     def test_build_definitions_returns_definitions(self, sample_asp_yaml):
         defs = build_definitions(sample_asp_yaml)
         assert isinstance(defs, dg.Definitions)
+
+    def test_build_spec_resolved_to_string(self, tmp_path, mock_runner):
+        """Container build specs should be resolved to tag strings."""
+        containerfile = tmp_path / "Containerfile"
+        containerfile.write_text("FROM python:3.12-slim\n")
+
+        spec = {
+            "name": "Test",
+            "container": {"build": "Containerfile"},
+            "outputs": [
+                {
+                    "id": "result",
+                    "type": "metric",
+                    "recipe": {"command": "python run.py"},
+                },
+            ],
+        }
+
+        with unittest.mock.patch(
+            "prism.container.image_exists_locally", return_value=True,
+        ):
+            assets = build_asset_definitions(
+                spec,
+                runner=mock_runner,
+                project_path=tmp_path,
+                project_name="Test",
+            )
+
+        assert len(assets) == 1
+        # The container metadata should be a resolved tag string, not a dict
+        for asset_spec in assets[0].specs:
+            meta = asset_spec.metadata or {}
+            container_val = meta.get("container", "")
+            assert isinstance(container_val, str)
+            assert "build" not in container_val  # not the raw dict

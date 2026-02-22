@@ -51,6 +51,20 @@ class TestIntegration:
         assert (project_dir / "results").is_dir()
         assert (project_dir / "scripts").is_dir()
 
+    def test_init_creates_containerfile(self, tmp_path, runner):
+        project = tmp_path / "container-project"
+        runner.invoke(main, ["init", str(project), "--no-git", "--no-venv"])
+        assert (project / "Containerfile").exists()
+        content = (project / "Containerfile").read_text()
+        assert "FROM python:3.12-slim" in content
+
+    def test_init_creates_requirements_txt(self, tmp_path, runner):
+        project = tmp_path / "req-project"
+        runner.invoke(main, ["init", str(project), "--no-git", "--no-venv"])
+        assert (project / "requirements.txt").exists()
+        content = (project / "requirements.txt").read_text()
+        assert "numpy" in content
+
     def test_status_shows_pending(self, project_dir):
         """Status should show 'pending' when nothing has been materialized."""
         # Ensure a universe exists

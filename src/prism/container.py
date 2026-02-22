@@ -1,0 +1,228 @@
+"""Container image building from Containerfiles.
+
+Resolves container specs in asp.yaml — either pre-built image strings
+or build specs that point to a Containerfile. Build specs produce
+content-addressed image tags for automatic caching.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Files whose contents contribute to the image tag hash.
+DEPENDENCY_FILES = (
+    "requirements.txt",
+    "requirements-dev.txt",
+    "requirements-test.txt",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "poetry.lock",
+    "Pipfile.lock",
+)
+
+
+class ContainerBuildError(Exception):
+    """Raised when a container image build fails."""
+
+
+@dataclass
+class ContainerBuildResult:
+    """Result of building a container image."""
+
+    tag: str
+    already_existed: bool
+    exit_code: int = 0
+    stdout: str = ""
+    stderr: str = ""
+
+
+def find_dependency_files(project_path: Path) -> list[Path]:
+    """Return sorted list of dependency files found in *project_path*."""
+    found: list[Path] = []
+    for name in DEPENDENCY_FILES:
+        p = project_path / name
+        if p.is_file():
+            found.append(p)
+    return sorted(found)
+
+
+def compute_image_tag(
+    project_name: str,
+    containerfile: Path,
+    project_path: Path,
+) -> str:
+    """Compute a content-addressed image tag.
+
+    The tag is ``prism-<project_name>-<12-char-sha256>``.  The hash covers
+    the Containerfile contents plus any dependency files found in the
+    project root.
+    """
+    h = hashlib.sha256()
+    h.update(containerfile.read_bytes())
+    for dep in find_dependency_files(project_path):
+        h.update(dep.read_bytes())
+    digest = h.hexdigest()[:12]
+    # Sanitise project name for use as a Docker tag component.
+    safe_name = project_name.lower().replace(" ", "-")
+    return f"prism-{safe_name}-{digest}"
+
+
+def image_exists_locally(tag: str) -> bool:
+    """Check whether *tag* exists in the local Docker image store."""
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", tag],
+            capture_output=True,
+            check=False,
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
+        # Docker CLI not installed.
+        return False
+
+
+def build_image(
+    tag: str,
+    containerfile: Path,
+    context: Path,
+    build_args: dict[str, str] | None = None,
+) -> ContainerBuildResult:
+    """Build a container image with ``docker build``.
+
+    Raises :class:`ContainerBuildError` on failure.
+    """
+    cmd: list[str] = [
+        "docker", "build",
+        "-t", tag,
+        "-f", str(containerfile),
+    ]
+    for key, value in (build_args or {}).items():
+        cmd += ["--build-arg", f"{key}={value}"]
+    cmd.append(str(context))
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        raise ContainerBuildError(
+            "Docker is not installed or not on PATH. "
+            "Install Docker to build container images."
+        )
+
+    if proc.returncode != 0:
+        raise ContainerBuildError(
+            f"docker build failed (exit code {proc.returncode}):\n{proc.stderr}"
+        )
+
+    return ContainerBuildResult(
+        tag=tag,
+        already_existed=False,
+        exit_code=proc.returncode,
+        stdout=proc.stdout,
+        stderr=proc.stderr,
+    )
+
+
+def resolve_container_spec(
+    spec: str | dict[str, Any] | None,
+    project_path: Path,
+    project_name: str,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> str | None:
+    """Resolve a container spec to an image tag string.
+
+    * ``None`` -> ``None``
+    * ``str`` -> returned as-is (pre-built image)
+    * ``dict`` with ``build`` key -> build (or skip if cached) and return tag
+
+    If *dry_run* is ``True``, returns the tag that *would* be used without
+    actually building.
+    """
+    if spec is None:
+        return None
+    if isinstance(spec, str):
+        return spec
+
+    # Must be a build spec dict.
+    build_path = spec.get("build")
+    if not build_path:
+        raise ContainerBuildError(
+            "Container build spec must have a 'build' key pointing to a Containerfile."
+        )
+
+    containerfile = project_path / build_path
+    if not containerfile.is_file():
+        raise ContainerBuildError(
+            f"Containerfile not found: {containerfile}"
+        )
+
+    tag = compute_image_tag(project_name, containerfile, project_path)
+
+    if dry_run:
+        return tag
+
+    if not force and image_exists_locally(tag):
+        logger.info("Image %s already exists, skipping build.", tag)
+        return tag
+
+    context_dir = project_path
+    if spec.get("context"):
+        context_dir = project_path / spec["context"]
+
+    logger.info("Building image %s from %s ...", tag, containerfile)
+    build_image(tag, containerfile, context_dir, build_args=spec.get("args"))
+    return tag
+
+
+@dataclass
+class ContainerStatus:
+    """Status information for a container spec."""
+
+    type: str  # "none", "prebuilt", "build"
+    image: str | None = None
+    exists: bool | None = None
+    containerfile: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+def get_container_status(
+    spec: str | dict[str, Any] | None,
+    project_path: Path,
+    project_name: str,
+) -> ContainerStatus:
+    """Return status information for a container spec without building."""
+    if spec is None:
+        return ContainerStatus(type="none")
+
+    if isinstance(spec, str):
+        return ContainerStatus(type="prebuilt", image=spec)
+
+    build_path = spec.get("build")
+    if not build_path:
+        return ContainerStatus(type="build", extra={"error": "missing 'build' key"})
+
+    containerfile = project_path / build_path
+    if not containerfile.is_file():
+        return ContainerStatus(
+            type="build",
+            containerfile=build_path,
+            extra={"error": f"Containerfile not found: {containerfile}"},
+        )
+
+    tag = compute_image_tag(project_name, containerfile, project_path)
+    exists = image_exists_locally(tag)
+    return ContainerStatus(
+        type="build",
+        image=tag,
+        exists=exists,
+        containerfile=build_path,
+    )
