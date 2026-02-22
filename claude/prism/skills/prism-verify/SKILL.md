@@ -43,7 +43,7 @@ Record pass/fail. Continue with remaining checks even if validation fails.
 
 ## Check 2: Result Files
 
-For every **output**, check that `results/<universe_id>/<output_id>.<ext>` exists. For every **artefact**, check that `results/<universe_id>/<chunk>/<artefact_id>.<ext>` exists. Record each as present or missing.
+For every **output**, check that `results/<universe_id>/<output_id>.<ext>` exists. Record each as present or missing.
 
 ---
 
@@ -82,7 +82,7 @@ For each `type: metric` output where the result file exists:
 
 ## Check 5: Decision-Code Alignment
 
-**The most important check.** For each chunk:
+**The most important check.** For the analysis:
 
 1. Read implementation plans and code
 2. Check that the code accepts parameters for each decision and that no decision values are hardcoded
@@ -96,7 +96,7 @@ Be pragmatic — the code may parse option IDs into internal representations (e.
 
 **Skip if the user opted out during Setup.**
 
-For each success criterion in `asp.yaml` (analysis-level and per-chunk):
+For each success criterion in `asp.yaml`:
 1. If a metric can directly verify it (e.g., "accuracy > 95%" → check `accuracy.json`), do so
 2. If verification requires qualitative judgment, note as "needs manual review"
 3. If no results relate to it, flag as unverifiable
@@ -107,7 +107,7 @@ For each success criterion in `asp.yaml` (analysis-level and per-chunk):
 
 Scan for drift between spec and implementation:
 
-1. **Undeclared outputs** — files in `results/<universe_id>/` not declared as outputs or artefacts
+1. **Undeclared outputs** — files in `results/<universe_id>/` not declared as outputs
 2. **Stale descriptions** — implementation plans describe an approach that diverges from asp.yaml
 
 Only flag things you're reasonably confident about.

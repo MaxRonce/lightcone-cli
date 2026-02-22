@@ -1,6 +1,6 @@
 ---
 name: prism-new
-description: Create a new ASP analysis project - scope research question, structure chunks, identify decisions with literature support
+description: Create a new ASP analysis project - scope research question, structure outputs and decisions with literature support
 allowed-tools: Read, Write(asp.yaml), Write(universes/*), Write(CLAUDE.md), Edit(asp.yaml), Edit(universes/*), Edit(CLAUDE.md), Glob, Grep, Bash(asp:*), Bash(prism:*), Bash(mkdir:*), WebSearch, WebFetch, AskUserQuestion
 ---
 
@@ -44,12 +44,11 @@ Don't checklist-walk. Follow what the user is uncertain or excited about.
 **Write to asp.yaml:**
 ```yaml
 version: "1.0"
-analysis:
-  name: "<analysis name>"
-  problem: |
-    <problem statement from conversation>
-  success_criteria:
-    - "<concrete criterion>"
+name: "<analysis name>"
+description: |
+  <problem statement from conversation>
+success_criteria:
+  - "<concrete criterion>"
 ```
 
 This gives the user something to see in the navigator immediately.
@@ -70,39 +69,51 @@ Understand the pipeline:
 
 > "Walk me through how you'd do this step by step. What happens first? What would you want to check before moving on?"
 
-From this, identify **chunks**:
-- Single `main` chunk if it's a straightforward analysis
-- Multiple chunks if there are clear stages with inspectable outputs
+From this, identify **outputs and their dependencies**:
+- Single flat analysis if it's a straightforward pipeline
+- Multiple sub-analyses (via `analyses:`) if there are clear stages with inspectable intermediate outputs
 
-For multi-chunk analyses, map:
-- What does each chunk produce? (artefacts)
-- What does the next chunk consume?
+For multi-stage analyses, map:
+- What outputs does each stage produce? (outputs with recipes)
+- What does the next stage consume? (inputs with `from:` references)
 - What decisions belong where?
 
 Then ask:
 
-> "Want to fully scope all chunks now, or start with [first chunk]?"
+> "Want to fully scope all stages now, or start with [first stage]?"
 
-**Update asp.yaml** with chunk structure:
+**Update asp.yaml** with structure:
 ```yaml
-analysis:
-  inputs:
-    - id: <input_id>
-      type: data
-      source: "<path or URL>"
-  outputs:
-    - id: <output_id>
-      type: <figure|table|data|report>
+inputs:
+  - id: <input_id>
+    type: data
+    source: "<path or URL>"
+outputs:
+  - id: <output_id>
+    type: <figure|table|data|metric|report>
 
-chunks:
-  first_chunk:
-    problem: "What this chunk accomplishes"
-    artefacts:
+# For multi-stage analyses, use sub-analyses:
+analyses:
+  first_stage:
+    description: "What this stage accomplishes"
+    inputs:
+      - id: stage_input
+        type: data
+        from: <parent_input_id>
+    outputs:
       - id: intermediate_output
         type: data
+        recipe:
+          command: python src/first_stage.py
 
-  second_chunk:
-    problem: "What this chunk accomplishes"
+  second_stage:
+    inputs:
+      - id: stage_input
+        type: data
+        from: first_stage.intermediate_output
+    outputs:
+      - id: final_result
+        type: figure
     # decisions TBD
 ```
 
@@ -110,15 +121,15 @@ chunks:
 
 ## Phase 3: Deep Dive
 
-Display stage banner (repeat for each chunk being scoped):
+Display stage banner (repeat for each section being scoped):
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► DEEP DIVE — [CHUNK NAME]
+ PRISM ► DEEP DIVE — [SECTION NAME]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-For each chunk being scoped, explore:
+For each section of the analysis being scoped, explore:
 
 1. **Decisions** — What choices matter? See [decision-guide.md](./decision-guide.md)
 2. **Data** — What does the input look like? (characteristics that affect decisions)
@@ -199,16 +210,20 @@ Read the existing `CLAUDE.md` (created by `prism init`). Replace the
 ```markdown
 ## Analysis Details
 
-### Problem
-<problem statement from asp.yaml>
+### Description
+<description from asp.yaml>
 
-### Chunks
+### Structure
 
-**<chunk_name>** — <chunk problem>
+**Top-level** — <what the top-level analysis covers>
 - Decisions: <list of decision IDs with labels>
-- Artefacts: <list of artefact IDs if any>
+- Outputs: <list of output IDs>
 
-(Repeat for each chunk)
+**<sub_analysis_name>** — <sub-analysis description>
+- Decisions: <list of decision IDs with labels>
+- Outputs: <list of output IDs>
+
+(Repeat for each sub-analysis, if any)
 
 ### Key Decisions
 <For each reviewed decision, briefly note what it controls and the default>
@@ -226,13 +241,13 @@ the context to implement without re-reading the entire conversation.
 Present a brief summary:
 
 ```
-| Chunk | Decisions | Artefacts | Status |
-|-------|-----------|-----------|--------|
-| main  | 3         | 2         | ✓      |
-| ...   | ...       | ...       | ...    |
+| Section       | Decisions | Outputs | Status |
+|---------------|-----------|---------|--------|
+| (top-level)   | 3         | 2       | ✓      |
+| sub_analysis  | ...       | ...     | ...    |
 ```
 
-- Problem statement
+- Description
 - Key decisions (noting which are ✓ reviewed vs ○ unreviewed)
 
 Then:
@@ -253,12 +268,13 @@ When ready to proceed:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-List chunks and their status:
+List sections and their status:
 
 ```
-| Chunk | Decisions | Reviewed | Artefacts |
-|-------|-----------|----------|-----------|
-| main  | 3         | 2/3      | 2         |
+| Section       | Decisions | Reviewed | Outputs |
+|---------------|-----------|----------|---------|
+| (top-level)   | 3         | 2/3      | 2       |
+| sub_analysis  | ...       | ...      | ...     |
 ```
 
 Then the Next Up block:
@@ -268,8 +284,8 @@ Then the Next Up block:
 
 ▶ Next Up
 
-Start building — ask me to implement a chunk
-(e.g. "implement the main chunk")
+Start building — ask me to implement a section
+(e.g. "implement the preprocessing stage")
 
 After implementation, run with `/prism-run`
 
@@ -309,7 +325,7 @@ You MUST ONLY create/modify:
 
 - **Waiting to write** — Update asp.yaml after each phase so the user sees progress
 - **Checklist walking** — Don't ask every question regardless of context
-- **Over-chunking** — Single chunk is fine for simple analyses
+- **Over-nesting** — A single flat analysis is fine for simple analyses; don't force sub-analyses
 - **Accepting vague goals** — "Analyze this data" is not a research question
 - **Implementation questions** — "What preprocessing?" belongs in the build phase, not here
 - **Writing insights directly** — Always defer to `/prism-insights` for evidence extraction

@@ -15,7 +15,7 @@ format, CLI commands, decision structure, universes, and validation.
 ### Project Layout
 
 ```
-asp.yaml                    # Specification: problem, decisions, inputs, outputs
+asp.yaml                    # Specification: decisions, inputs, outputs
 CLAUDE.md                   # This file — conventions and project context
 universes/
   baseline.yaml             # Default decision selections
@@ -23,17 +23,17 @@ scripts/                    # Implementation scripts
 results/<universe_id>/      # Output files, organized by universe
 ```
 
-### Building a Chunk
+### Building the Analysis
 
-When implementing a chunk:
+When implementing the analysis:
 
 1. Write the implementation scripts
 2. **Parameterize all decisions** (see below)
-3. Write results to `results/<universe_id>/`
+3. Write results to `results/<universe_id>/<output_id>/`
 4. Validate: `asp validate asp.yaml`
 
-For single-chunk analyses, implementation goes directly in `scripts/`.
-For multi-chunk analyses, organize by chunk: `scripts/<chunk_name>/`.
+For single-stage analyses, implementation goes directly in `scripts/`.
+For multi-stage analyses, use sub-analyses and organize by stage: `scripts/<stage_name>/`.
 
 ### Executing
 
@@ -66,10 +66,9 @@ How to handle each decision type:
 ### Writing Results
 
 Results use a convention-based layout — no `path` field in `asp.yaml`. File
-names are derived from the output/artefact `id` plus its format extension.
+names are derived from the output `id` plus its format extension.
 
-**Outputs** (analysis-level) → `results/<universe_id>/<output_id>.<ext>`
-**Artefacts** (chunk-level) → `results/<universe_id>/<chunk>/<artefact_id>.<ext>`
+**Outputs** → `results/<universe_id>/<output_id>.<ext>`
 
 | Output type | Format | Example path |
 |-------------|--------|--------------|

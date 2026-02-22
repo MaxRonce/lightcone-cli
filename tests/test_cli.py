@@ -47,8 +47,8 @@ class TestInitCommand:
         content = (project_dir / "asp.yaml").read_text()
         assert "content-test" in content
         assert "version:" in content
-        assert "analysis:" in content
-        assert "chunks:" in content
+        assert "name:" in content
+        assert "description:" in content
         assert "decisions:" in content
 
     def test_init_gitignore_content(self, runner: CliRunner, tmp_path: Path):

@@ -173,10 +173,9 @@ insights:
     scope: "<when this applies, optional>"
 
 decision_links:
-  <chunk_name>:
-    <decision_id>:
-      <option_id>:
-        - <insight_id>
+  <decision_id>:
+    <option_id>:
+      - <insight_id>
 ```
 
 **Why prefix/suffix are required**: The verification system uses fuzzy matching (RapidFuzz) to handle OCR errors, Unicode variations, and inline citations in PDFs. The prefix/suffix provide disambiguation context per the W3C TextQuoteSelector standard, ensuring the correct quote instance is matched even when similar text appears multiple times in the paper.
@@ -258,14 +257,12 @@ Print: `## Step 5: Link to Decisions`
 Using the `decision_links` from subagent outputs, add insight references to decision options:
 
 ```yaml
-chunks:
-  main:
-    decisions:
-      normalization:
-        options:
-          layer_norm:
-            insights:
-              - layer_norm_stability    # Reference to insight ID
+decisions:
+  normalization:
+    options:
+      layer_norm:
+        insights:
+          - layer_norm_stability    # Reference to insight ID
 ```
 
 ## Step 6: Final Validation

@@ -15,7 +15,7 @@ Use for major phase transitions.
 **Stage names (uppercase):**
 - `RESEARCH QUESTION`
 - `ANALYSIS STRUCTURE`
-- `DEEP DIVE — [CHUNK NAME]`
+- `DEEP DIVE — [SECTION]`
 - `FINALIZING`
 - `SPECIFICATION COMPLETE ✓`
 
@@ -74,9 +74,9 @@ Also available:
 ## Tables
 
 ```
-| Chunk | Decisions | Reviewed | Artefacts |
-|-------|-----------|----------|-----------|
-| main  | 3         | 2/3      | 2         |
+| Section | Decisions | Reviewed | Outputs |
+|---------|-----------|----------|---------|
+| main    | 3         | 2/3      | 2       |
 ```
 
 ---

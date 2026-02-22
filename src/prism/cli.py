@@ -153,50 +153,46 @@ def _create_boilerplate_asp_yaml(directory: Path) -> None:
 # Documentation: https://github.com/LightconeResearch/ASP
 
 version: "1.0"
+name: "{name}"
+description: |
+  TODO: What research question are you trying to answer?
 
-analysis:
-  name: "{name}"
-  problem: |
-    TODO: What research question are you trying to answer?
+inputs:
+  - id: primary_data
+    type: data
+    description: "TODO: Describe your primary data source"
 
-  inputs:
-    - id: primary_data
-      type: data
-      description: "TODO: Describe your primary data source"
+outputs:
+  - id: main_result
+    type: metric
+    dtype: float
+    description: "TODO: Describe your primary output metric"
+    recipe:
+      command: python scripts/compute.py
+      container: "python:3.12-slim"
 
-  outputs:
-    - id: main_result
-      type: metric
-      dtype: float
-      description: "TODO: Describe your primary output metric"
-      recipe:
-        command: python scripts/compute.py
-        container: "python:3.12-slim"
+  - id: conclusion
+    type: report
+    description: "Summary addressing the problem statement"
+    recipe:
+      command: python scripts/summarize.py
+      inputs: [main_result]
+      container: "python:3.12-slim"
 
-    - id: conclusion
-      type: report
-      description: "Summary addressing the problem statement"
-      recipe:
-        command: python scripts/summarize.py
-        inputs: [main_result]
-        container: "python:3.12-slim"
-
-chunks:
-  main:
-    decisions:
-      example_method:
-        label: "Example Method Choice"
-        type: method
-        importance: 3
-        rationale: "TODO: Explain why this decision matters"
-        default: option_a
-        options:
-          option_a:
-            label: "Option A"
-            description: "TODO: Describe option A"
-          option_b:
-            label: "Option B"
-            description: "TODO: Describe option B"
+decisions:
+  example_method:
+    label: "Example Method Choice"
+    type: method
+    importance: 3
+    rationale: "TODO: Explain why this decision matters"
+    default: option_a
+    options:
+      option_a:
+        label: "Option A"
+        description: "TODO: Describe option A"
+      option_b:
+        label: "Option B"
+        description: "TODO: Describe option B"
 """
     (directory / "asp.yaml").write_text(asp_yaml)
 
@@ -207,9 +203,8 @@ chunks:
 id: baseline
 description: "Default configuration using standard practices"
 
-chunks:
-  main:
-    example_method: option_a
+decisions:
+  example_method: option_a
 """
     (directory / "universes" / "baseline.yaml").write_text(baseline_universe)
 

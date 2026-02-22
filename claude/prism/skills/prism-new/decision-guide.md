@@ -104,7 +104,7 @@ options:
     requires: ["framework.pytorch"]            # Must have this
 ```
 
-Constraints are scoped within a chunk — they reference other decisions in the same chunk.
+Constraints reference other decisions in the same analysis (or sub-analysis).
 
 ## Reviewed vs Unreviewed
 

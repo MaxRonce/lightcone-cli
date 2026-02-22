@@ -12,43 +12,75 @@ Help users work with the Agentic Science Protocol (ASP) via Prism — a declarat
 
 | Command | Purpose |
 |---------|---------|
-| `/prism-new` | Create a new analysis — scope question, structure chunks, identify decisions with literature |
+| `/prism-new` | Create a new analysis — scope question, structure decisions, identify sub-analyses with literature |
 | `/prism-run` | Execute recipes — materialize outputs, monitor status, diagnose failures |
 | `/prism-status` | Quick pipeline status check — what's materialized, what's pending |
 
 ### Workflow
 
 ```
-/prism-new  →  build each chunk  →  /prism-run  →  /prism-verify
+/prism-new  →  build analysis  →  /prism-run  →  /prism-verify
 ```
 
-`/prism-new` scopes the research question, structures chunks, identifies decisions, and proactively searches for supporting literature. Then start building — Claude Code reads `CLAUDE.md` + `asp.yaml` and implements each chunk.
+`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building — Claude Code reads `CLAUDE.md` + `asp.yaml` and implements each part.
 
-## Chunks
+## Analysis Structure
 
-Every analysis has `chunks` in `asp.yaml`. All decisions live under chunks — there are no top-level decisions. A simple analysis uses a single `main` chunk. Complex analyses have multiple chunks:
+An ASP analysis (`asp.yaml`) is a **self-similar** specification. Every level has the same structure: metadata, inputs, outputs, decisions, insights, and optional sub-analyses. Top-level fields are:
+
+- `name`, `description`, `version`, `authors`, `tags`
+- `inputs`: data sources
+- `outputs`: expected outputs (metrics, figures, tables, data, reports)
+- `decisions`: analysis choice points (methods, parameters, data choices)
+- `insights`: scientific knowledge from papers or prior analyses
+- `analyses`: optional sub-analyses (self-similar nesting)
+- `container`: default container image for recipes
+
+A simple analysis puts everything at the top level. Complex analyses use `analyses:` for multi-stage pipelines where each sub-analysis has its own inputs, outputs, and decisions.
+
+### Simple analysis (decisions at top level)
 
 ```yaml
-chunks:
-  main:
-    decisions:
-      scaling:
-        label: "Feature Scaling"
-        type: method
-        default: standard
-        options:
-          standard:
-            label: "StandardScaler"
-          minmax:
-            label: "MinMaxScaler"
+decisions:
+  scaling:
+    label: "Feature Scaling"
+    type: method
+    default: standard
+    options:
+      standard:
+        label: "StandardScaler"
+      minmax:
+        label: "MinMaxScaler"
 ```
 
-Multi-chunk example:
+### Multi-stage analysis (using sub-analyses)
 
 ```yaml
-chunks:
+# Top-level decisions shared across stages
+decisions:
+  cosmology_model:
+    label: "Cosmological Model"
+    type: method
+    default: flat_lcdm
+    options:
+      flat_lcdm:
+        label: "Flat LCDM"
+      wcdm:
+        label: "wCDM"
+
+# Sub-analyses for pipeline stages
+analyses:
   build_mocks:
-    problem: "Generate realistic mock catalogs matching survey properties."
+    description: "Generate realistic mock catalogs matching survey properties."
+    inputs:
+      - id: survey_data
+        type: data
+        from: survey_catalog
+    outputs:
+      - id: mock_catalog
+        type: data
+        recipe:
+          command: python src/generate_mocks.py
     decisions:
       noise_model:
         label: "Noise Model"
@@ -59,12 +91,21 @@ chunks:
             label: "Homoscedastic"
           heteroscedastic:
             label: "Heteroscedastic"
-    artefacts:
-      - id: mock_catalog
-        type: data
 
   train_network:
-    problem: "Train SBI neural network on mock catalog."
+    description: "Train SBI neural network on mock catalog."
+    inputs:
+      - id: training_data
+        type: data
+        from: build_mocks.mock_catalog
+    outputs:
+      - id: trained_model
+        type: data
+        recipe:
+          command: python src/train.py
+          resources:
+            gpus: 1
+            memory: "32GB"
     decisions:
       architecture:
         label: "Network Architecture"
@@ -77,9 +118,7 @@ chunks:
             label: "Neural Posterior Estimation"
 ```
 
-A chunk can have: `problem`, `success_criteria`, `decisions`, and `artefacts` (figures, tables, data, reports produced by the chunk).
-
-The `main` chunk is special — it inherits `problem` and `success_criteria` from the top-level `analysis`, and its outputs are the analysis-level `outputs`. Don't set `problem`, `success_criteria`, or `artefacts` on `main`; they belong on the analysis. Non-main chunks should set their own `problem`, `success_criteria`, and `artefacts` as needed.
+Sub-analyses can have: `description`, `success_criteria`, `inputs`, `outputs`, `decisions`, `insights`, and their own nested `analyses`. Sub-analysis inputs can reference parent inputs (`from: input_id`) or sibling outputs (`from: sibling_id.output_id`).
 
 ## Quick Reference
 
@@ -107,10 +146,9 @@ prism remote setup perlmutter     # Configure execution target
 
 ### Writing Results
 
-Results use a convention-based layout — file names are `<id>.<ext>` derived from the output/artefact `id` and its format.
+Results use a convention-based layout — file names are `<id>.<ext>` derived from the output `id` and its format.
 
-**Outputs** (analysis-level) → `results/<universe_id>/<output_id>.<ext>`
-**Artefacts** (chunk-level) → `results/<universe_id>/<chunk>/<artefact_id>.<ext>`
+**Outputs** go to `results/<universe_id>/<output_id>.<ext>`
 
 ```yaml
 # asp.yaml — no path field needed
@@ -118,8 +156,7 @@ outputs:
   - id: accuracy
     type: metric             # → results/<universe_id>/accuracy.json
   - id: corner_plot
-    type: figure
-    formats: ["png"]         # → results/<universe_id>/corner_plot.png
+    type: figure             # → results/<universe_id>/corner_plot.png
 ```
 
 For metrics, write a JSON file with the value: `{"value": 0.95}`
@@ -148,43 +185,50 @@ prism status                 # check materialization status
 prism dev                    # Dagster webserver UI
 ```
 
-**Chunk note:** All chunks are defined inline in the root `asp.yaml`. No separate directories or files needed for chunk specifications.
-
 ## Core Concepts
-
-### Analysis Structure
-An ASP analysis (`asp.yaml`) contains:
-- **analysis**: name, problem statement, success criteria, inputs, outputs
-- **insights**: scientific knowledge from papers or prior analyses
-- **chunks**: pipeline stages, each with its own decisions (every analysis has at least one — use `main` for single-stage analyses)
 
 ### Success Criteria
 Define concrete, verifiable conditions for success:
 ```yaml
-analysis:
-  problem: |
-    Build a classifier for the Iris dataset...
-  success_criteria:
-    - "Achieve >95% classification accuracy on held-out test set"
-    - "Model size under 10MB for mobile deployment"
-    - "Prediction time under 100ms per sample"
+description: |
+  Build a classifier for the Iris dataset...
+success_criteria:
+  - "Achieve >95% classification accuracy on held-out test set"
+  - "Model size under 10MB for mobile deployment"
+  - "Prediction time under 100ms per sample"
 ```
 
 ### Universes
-A universe is a complete set of decisions organized by chunk — one option per decision point. Decisions are nested under their chunk:
+A universe is a complete set of decisions — one option per decision point. For simple analyses, decisions are at the top level. For analyses with sub-analyses, decisions are nested under `analyses:`:
 
+Simple universe:
 ```yaml
-chunks:
-  main:
-    scaling: standard
-    model: random_forest
+id: baseline
+decisions:
+  scaling: standard
+  model: random_forest
+```
+
+Nested universe (with sub-analyses):
+```yaml
+id: baseline
+decisions:
+  cosmology_model: flat_lcdm
+analyses:
+  build_mocks:
+    decisions:
+      noise_model: heteroscedastic
+  train_network:
+    decisions:
+      architecture: maf
 ```
 
 ### Inputs
 Inputs define the data sources for an analysis:
 - **id**: Unique identifier
-- **type**: `data`, `analysis`, or `literature`
+- **type**: `data` or `analysis`
 - **source**: Where to get the data (file path or URL)
+- **from**: Reference a parent input or sibling output (sub-analyses only)
 
 ```yaml
 inputs:
@@ -192,11 +236,9 @@ inputs:
     type: data
     source: "data/train.csv"           # Local file path
 
-  - id: remote_data
-    type: data
-    source:
-      type: url
-      url: "https://example.com/data.csv"  # Remote URL
+  - id: reference_study
+    type: analysis
+    ref: "analyses/reference"          # Another ASP analysis
 ```
 
 ## Universe Lifecycle
@@ -206,8 +248,8 @@ Decisions emerge during analysis — you don't know all of them upfront. When yo
 ### Adding a new decision after baseline
 
 1. **Identify the scope**: New option on an existing decision, or an entirely new decision?
-   - New option → add it to the existing decision in `asp.yaml`
-   - New decision → add a new decision entry under the relevant chunk
+   - New option: add it to the existing decision in `asp.yaml`
+   - New decision: add a new decision entry under `decisions:` (at the top level or within the relevant sub-analysis)
 
 2. **Add to `asp.yaml`**: Define the decision with all options, a default, and a rationale.
 
@@ -237,9 +279,9 @@ These are NOT universes (just normal commits):
 Use `/prism-new` to interactively scope your project:
 1. Define the research question
 2. Define top-level inputs, outputs, success criteria
-3. Define chunks with wiring
+3. Define decisions (and sub-analyses if the pipeline has distinct stages)
 
-Then start building each chunk — Claude Code reads `CLAUDE.md` + `asp.yaml` and implements naturally.
+Then start building — Claude Code reads `CLAUDE.md` + `asp.yaml` and implements naturally.
 
 Alternatively, scaffold manually:
 ```bash
@@ -260,32 +302,34 @@ Check `asp.yaml` to understand:
 - What inputs/outputs are defined?
 
 ### Step 3: Extract Relevant Insights
-For each insight relevant to the analysis:
+For each insight relevant to the analysis, use W3C-compliant selectors for evidence:
 
 ```yaml
 insights:
   insight_id:  # lowercase_with_underscores
     claim: "One sentence stating what we learned"
-    source:
-      doi: "10.1234/paper-doi"
     evidence:
-      # For figures:
-      - figure: "Figure 3a"
-        caption: "Description of what it shows"
-      # For quotes:
-      - quote: "Exact text from the paper"
-        location: "Section 2.1, p.5"
-      # For tables:
-      - table: "Table 1"
-        location: "row 3, accuracy column"
-        value: "0.92"
-      # For equations:
-      - equation: "Equation 7"
-        expression: "L = (C/C_0)^α"
-      # For numerical results:
-      - result: "accuracy improvement"
-        location: "Section 4.2"
-        value: "15%"
+      - id: e1
+        doi: "10.1234/paper-doi"
+        # For quotes (W3C TextQuoteSelector):
+        quote:
+          exact: "Exact text from the paper"
+          prefix: "text before for disambiguation"
+          suffix: "text after for disambiguation"
+        location:
+          page: 5
+      # For figures (FigureSelector):
+      - id: e2
+        doi: "10.1234/paper-doi"
+        figure:
+          label: "Figure 3a"
+          caption: "Description of what it shows"
+      # For tables (TableSelector):
+      - id: e3
+        doi: "10.1234/paper-doi"
+        table:
+          label: "Table 1"
+          region: "row 3, accuracy column"
     scope: "Context where this applies (optional)"
 ```
 
@@ -298,8 +342,8 @@ decisions:
     options:
       method_a:
         label: "Method A"
-        evidence:
-          - insight: insight_id  # Reference the insight
+        insights:
+          - insight_id  # Reference the insight
 ```
 
 ### Step 5: Validate
@@ -310,31 +354,25 @@ asp validate asp.yaml
 ## Insight Types by Source
 
 ### From Papers (doi)
-Use these evidence types:
-- `figure`: Reference to a figure
-- `quote`: Direct quote with location
-- `table`: Table reference with specific value
-- `equation`: Mathematical expression
-- `result`: Numerical finding
+Use W3C-compliant selectors as evidence:
+- `quote`: TextQuoteSelector with `exact`, optional `prefix`/`suffix`
+- `figure`: FigureSelector with `label`, optional `caption`
+- `table`: TableSelector with `label`, optional `region`
+- `location`: FragmentSelector with `page` number
 
-### From Prior Analyses (analysis)
-Use these evidence types:
-- `metric`: Named metric with value
-- `output`: Reference to output artifact
+### From Analysis Artifacts (artifact)
+Reference an output by its ID:
 
 ```yaml
 insights:
   prior_finding:
     claim: "StandardScaler outperforms MinMaxScaler on this dataset"
-    source:
-      analysis: "our-org/preprocessing-study"
-      version: "1.2.0"
-      universe: "baseline"
     evidence:
-      - metric:
-          name: "accuracy"
-          value: { standard: 0.94, minmax: 0.89 }
-      - output: "figures/scaler_comparison.png"
+      - id: e1
+        artifact: "accuracy"
+        checksum:
+          algorithm: sha256
+          value: "abc123..."
 ```
 
 ## Validation Checklist
@@ -344,41 +382,37 @@ Before finalizing an analysis, verify:
 1. **Schema compliance**: `asp validate asp.yaml`
 2. **All decisions have defaults**: Required for universe generation
 3. **Insights have valid DOIs**: Pattern `10.XXXX/...`
-4. **Evidence references exist**: Insights referenced in evidence must be defined
+4. **Evidence references exist**: Insights referenced in options must be defined
 5. **Constraint references valid**: `incompatible_with` and `requires` point to real options
 
 ## Common Patterns
 
 ### Adding a New Decision
-Decisions live under `chunks.<chunk_name>.decisions`:
+Decisions live under `decisions:` at the top level (or within a sub-analysis under `analyses:`):
 ```yaml
-chunks:
-  main:
-    decisions:
-      new_decision:
-        label: "Human-readable Label"
-        type: method  # or: data, parameter
-        importance: 3  # 1=critical, 5=minor
-        reviewed: true  # Has a human weighed in on this decision?
-        rationale: "Why this decision matters"
-        default: option_a
-        options:
-          option_a:
-            label: "Option A"
-            description: "What this option does"
-          option_b:
-            label: "Option B"
-            description: "Alternative approach"
-            incompatible_with: ["other_decision.some_option"]
+decisions:
+  new_decision:
+    label: "Human-readable Label"
+    type: method  # or: data, parameter
+    rationale: "Why this decision matters"
+    default: option_a
+    options:
+      option_a:
+        label: "Option A"
+        description: "What this option does"
+      option_b:
+        label: "Option B"
+        description: "Alternative approach"
+        incompatible_with: ["other_decision.some_option"]
 ```
 
 ### Adding Literature Input
 ```yaml
-analysis:
-  inputs:
-    - id: smith2023
-      type: literature
-      description: "Smith et al. 2023 - Methodology paper"
+inputs:
+  - id: smith2023
+    type: data
+    description: "Smith et al. 2023 - Methodology paper"
+    source: "https://doi.org/10.1234/smith2023"
 ```
 
 ### Creating a New Universe
@@ -393,10 +427,10 @@ Then edit `universes/experiment1.yaml` to customize decisions. If this requires 
 
 ```
 my-analysis/
-├── asp.yaml              # Full spec with chunks defined inline
+├── asp.yaml              # Full spec with decisions and optional sub-analyses
 ├── CLAUDE.md             # Build conventions and project context
 ├── universes/
-│   └── baseline.yaml     # Decision selections organized by chunk
+│   └── baseline.yaml     # Decision selections (mirrors analysis tree)
 ├── scripts/              # Implementation scripts
 ├── results/              # Execution outputs (gitignored)
 └── .claude/
@@ -405,12 +439,11 @@ my-analysis/
     └── skills/           # Prism skills
 ```
 
-Chunks are defined inline in `asp.yaml` — no separate directories needed for the specification.
-
 ## Tips
 
-1. **Start with the problem**: Write a clear problem statement before defining decisions
+1. **Start with the description**: Write a clear description before defining decisions
 2. **One insight per finding**: Don't combine multiple findings in one insight
-3. **Precise evidence**: Include page numbers, figure labels, exact quotes
-4. **Link insights to decisions**: Every decision option should ideally have supporting evidence
+3. **Precise evidence**: Use W3C selectors — include exact quotes, figure labels, page numbers
+4. **Link insights to decisions**: Every decision option should ideally have supporting evidence via `insights:`
 5. **Use scope**: Clarify when an insight applies (dataset, model type, conditions)
+6. **Self-similar nesting**: For multi-stage pipelines, use `analyses:` to decompose into sub-analyses — each is a valid analysis on its own
