@@ -6,6 +6,25 @@ from pathlib import Path
 from asp.helpers import get_outputs, load_yaml
 
 
+def _output_is_materialized(results_dir: Path, output_id: str) -> bool:
+    """Check whether an output has been materialized.
+
+    Handles both conventions:
+    - Flat file:  results/<universe>/<output_id>.<ext>
+    - Directory:  results/<universe>/<output_id>/ (with files inside)
+    """
+    if not results_dir.exists():
+        return False
+    # Flat file — any extension
+    if any(results_dir.glob(f"{output_id}.*")):
+        return True
+    # Directory with files
+    output_dir = results_dir / output_id
+    if output_dir.is_dir() and any(output_dir.iterdir()):
+        return True
+    return False
+
+
 def get_output_status(
     project_path: Path,
     universe_id: str,
@@ -13,11 +32,13 @@ def get_output_status(
     """Get materialization status for all outputs in a universe.
 
     Returns dict mapping output_id to status string:
-    - "materialized": output directory exists and contains files
-    - "not_run": output directory doesn't exist or is empty
+    - "no_recipe": output declared but has no recipe block
+    - "pending": has recipe, not yet materialized
+    - "materialized": has recipe and results exist
     """
     spec = load_yaml(project_path / "asp.yaml")
     outputs = get_outputs(spec)
+    results_dir = project_path / "results" / universe_id
 
     status: dict[str, str] = {}
     for out in outputs:
@@ -25,12 +46,12 @@ def get_output_status(
         if not out_id:
             continue
         if not out.get("recipe"):
+            status[out_id] = "no_recipe"
             continue
-        output_path = project_path / "results" / universe_id / out_id
-        if output_path.exists() and any(output_path.iterdir()):
+        if _output_is_materialized(results_dir, out_id):
             status[out_id] = "materialized"
         else:
-            status[out_id] = "not_run"
+            status[out_id] = "pending"
 
     return status
 

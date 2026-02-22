@@ -1,14 +1,14 @@
-"""ASP Container Runner — executes recipes in Docker or SLURM containers."""
+"""ASP Container Runner — executes recipes in Docker, locally, or via SLURM."""
 from __future__ import annotations
 
-import json
+import logging
 import subprocess
-import tempfile
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from prism.dagster.io_manager import ASPIOManager
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -17,6 +17,14 @@ class ExecutionResult:
     exit_code: int
     output_path: Path
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _build_cli_args(params: dict[str, Any], universe_id: str) -> list[str]:
+    """Build CLI arguments from universe decisions."""
+    args = ["--universe", universe_id]
+    for key, value in params.items():
+        args.extend([f"--{key}", str(value)])
+    return args
 
 
 def translate_resources_to_docker_flags(resources: dict[str, Any]) -> list[str]:
@@ -32,9 +40,11 @@ def translate_resources_to_docker_flags(resources: dict[str, Any]) -> list[str]:
 
 
 class ASPContainerRunner:
-    """Executes ASP recipes in containers.
+    """Executes ASP recipes via Docker, local subprocess, or SLURM.
 
-    Dispatches to Docker (local) or SLURM (remote) based on backend config.
+    When backend is "docker", attempts Docker execution first.  If Docker
+    fails (missing image, daemon not running, non-zero exit), falls back to
+    local subprocess execution with a warning.
     """
 
     def __init__(
@@ -48,7 +58,6 @@ class ASPContainerRunner:
         self.backend = backend
         self.default_container = default_container
         self.target_config = target_config or {}
-        self.io_manager = ASPIOManager(project_root)
 
     def execute(
         self,
@@ -60,18 +69,16 @@ class ASPContainerRunner:
         resources: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
     ) -> ExecutionResult:
-        """Execute a recipe, dispatching to the configured backend."""
-        if self.backend == "docker":
-            return self._run_docker(
-                command=command,
-                container=container or self.default_container,
-                input_ids=inputs or [],
-                output_id=output_id,
-                universe_id=universe_id,
-                resources=resources or {},
-                params=params or {},
-            )
-        elif self.backend == "slurm":
+        """Execute a recipe, dispatching to the configured backend.
+
+        For the "docker" backend, falls back to local execution when Docker
+        is unavailable or the container run fails.
+        """
+        cli_args = _build_cli_args(params or {}, universe_id)
+        results_dir = self.project_root / "results" / universe_id
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        if self.backend == "slurm":
             return self._run_slurm(
                 command=command,
                 container=container or self.default_container,
@@ -80,110 +87,126 @@ class ASPContainerRunner:
                 universe_id=universe_id,
                 resources=resources or {},
             )
-        else:
-            raise ValueError(f"Unknown backend: {self.backend}")
 
-    def build_docker_mounts(
-        self,
-        input_ids: list[str],
-        output_id: str,
-        universe_id: str,
-        params_file: Path | None = None,
-    ) -> list[str]:
-        """Build Docker volume mount arguments."""
-        mounts: list[str] = []
-        for inp_id in input_ids:
-            host_path = self.io_manager.get_output_path(inp_id, universe_id)
-            mounts.extend([
-                "-v", f"{host_path}:/workspace/inputs/{inp_id}:ro"
-            ])
-        output_path = self.io_manager.get_output_path(output_id, universe_id)
-        output_path.mkdir(parents=True, exist_ok=True)
-        mounts.extend([
-            "-v", f"{output_path}:/workspace/outputs/{output_id}"
-        ])
-        if params_file is not None:
-            mounts.extend([
-                "-v", f"{params_file}:/workspace/params.json:ro"
-            ])
-        return mounts
+        # Docker backend — try Docker first, fall back to local
+        effective_container = container or self.default_container
+        if effective_container:
+            result = self._run_docker(
+                command=command,
+                container=effective_container,
+                universe_id=universe_id,
+                resources=resources or {},
+                cli_args=cli_args,
+            )
+            if result.exit_code == 0:
+                return result
+            # Docker failed — fall back
+            logger.warning(
+                "Docker execution failed for '%s' (exit code %d). "
+                "Falling back to local execution.\n  stderr: %s",
+                output_id, result.exit_code,
+                result.metadata.get("stderr", "")[:200],
+            )
 
-    def build_docker_command(
-        self,
-        command: str,
-        container: str | None,
-        input_ids: list[str],
-        output_id: str,
-        universe_id: str,
-        resources: dict[str, Any],
-        params_file: Path | None = None,
-    ) -> list[str]:
-        """Build the full docker run command."""
-        if container is None:
-            raise ValueError(
-                f"No container specified for output '{output_id}' "
-                "and no default_container configured"
-            )
-        cmd = ["docker", "run", "--rm"]
-        cmd.extend(translate_resources_to_docker_flags(resources))
-        cmd.extend(
-            self.build_docker_mounts(
-                input_ids, output_id, universe_id, params_file=params_file
-            )
+        return self._run_local(
+            command=command,
+            output_id=output_id,
+            universe_id=universe_id,
+            cli_args=cli_args,
+            warn=effective_container is not None,
         )
-        cmd.extend([container, "sh", "-c", command])
-        return cmd
 
     def _run_docker(
         self,
         command: str,
-        container: str | None,
-        input_ids: list[str],
-        output_id: str,
+        container: str,
         universe_id: str,
         resources: dict[str, Any],
-        params: dict[str, Any] | None = None,
+        cli_args: list[str],
     ) -> ExecutionResult:
-        """Execute a recipe in a Docker container."""
-        # Write params.json to a temp file if decisions are provided
-        params_file = None
-        tmp = None
-        try:
-            if params:
-                tmp = tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".json", delete=False
-                )
-                json.dump(params, tmp)
-                tmp.close()
-                params_file = Path(tmp.name)
+        """Execute a recipe in a Docker container.
 
-            docker_cmd = self.build_docker_command(
-                command=command,
-                container=container,
-                input_ids=input_ids,
-                output_id=output_id,
-                universe_id=universe_id,
-                resources=resources,
-                params_file=params_file,
-            )
-            result = subprocess.run(
-                docker_cmd,
-                capture_output=True,
-                text=True,
-            )
-            output_path = self.io_manager.get_output_path(output_id, universe_id)
+        Mounts the project root at /workspace so scripts can read data and
+        write results using their normal relative paths.
+        """
+        full_command = command + " " + " ".join(cli_args)
+
+        cmd = ["docker", "run", "--rm"]
+        cmd.extend(translate_resources_to_docker_flags(resources))
+        cmd.extend([
+            "-v", f"{self.project_root}:/workspace",
+            "-w", "/workspace",
+            container,
+            "sh", "-c", full_command,
+        ])
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+        except FileNotFoundError:
+            # Docker binary not found
             return ExecutionResult(
-                exit_code=result.returncode,
-                output_path=output_path,
-                metadata={
-                    "stdout": result.stdout[-1000:] if result.stdout else "",
-                    "stderr": result.stderr[-1000:] if result.stderr else "",
-                    "docker_command": " ".join(docker_cmd),
-                },
+                exit_code=127,
+                output_path=self.project_root / "results" / universe_id,
+                metadata={"stderr": "docker: command not found"},
             )
-        finally:
-            if tmp is not None:
-                Path(tmp.name).unlink(missing_ok=True)
+
+        return ExecutionResult(
+            exit_code=result.returncode,
+            output_path=self.project_root / "results" / universe_id,
+            metadata={
+                "stdout": result.stdout[-2000:] if result.stdout else "",
+                "stderr": result.stderr[-2000:] if result.stderr else "",
+                "backend": "docker",
+                "docker_command": " ".join(cmd),
+            },
+        )
+
+    def _run_local(
+        self,
+        command: str,
+        output_id: str,
+        universe_id: str,
+        cli_args: list[str],
+        warn: bool = False,
+    ) -> ExecutionResult:
+        """Execute a recipe as a local subprocess.
+
+        Uses the current Python environment.  Decision parameters are passed
+        as CLI arguments.
+        """
+        if warn:
+            logger.warning(
+                "Executing '%s' locally (no container). "
+                "Results may differ from containerised execution.",
+                output_id,
+            )
+
+        full_command = command + " " + " ".join(cli_args)
+
+        # Use the same Python that is running prism, unless the command
+        # explicitly names an interpreter.
+        env_python = sys.executable
+        if full_command.startswith("python "):
+            full_command = env_python + full_command[len("python"):]
+
+        result = subprocess.run(
+            full_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=str(self.project_root),
+        )
+
+        output_path = self.project_root / "results" / universe_id
+        return ExecutionResult(
+            exit_code=result.returncode,
+            output_path=output_path,
+            metadata={
+                "stdout": result.stdout[-2000:] if result.stdout else "",
+                "stderr": result.stderr[-2000:] if result.stderr else "",
+                "backend": "local",
+            },
+        )
 
     def _run_slurm(
         self,

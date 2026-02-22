@@ -19,10 +19,24 @@ Help users work with the Agentic Science Protocol (ASP) via Prism — a declarat
 ### Workflow
 
 ```
-/prism-new  →  build analysis  →  /prism-run  →  /prism-verify
+/prism-new  →  write & debug  →  integrate recipes  →  /prism-run
 ```
 
-`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building — Claude Code reads `CLAUDE.md` + `asp.yaml` and implements each part.
+`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building progressively.
+
+## Development Workflow
+
+### Phase 1: Write & Debug
+Write scripts and run them directly (`python scripts/compute.py`). Iterate until they work. But write them **recipe-ready** from the start:
+- Parameterize all decisions (accept as CLI args, never hardcode)
+- Write results to convention paths (`results/<universe_id>/<output_id>.<ext>`)
+- One script per output
+
+### Phase 2: Integrate
+When a script works, add a `recipe:` block to its output in `asp.yaml`. Check integration progress with `prism status` — it shows which outputs have recipes and which don't.
+
+### Phase 3: Materialize
+Run `prism run` to execute via Dagster. Phases can overlap — some outputs may be materialized while others are still being debugged. Use `prism status` to track progress across all three states.
 
 ## Analysis Structure
 

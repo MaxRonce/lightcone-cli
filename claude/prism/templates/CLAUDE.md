@@ -23,31 +23,52 @@ scripts/                    # Implementation scripts
 results/<universe_id>/      # Output files, organized by universe
 ```
 
-### Building the Analysis
+### Building the Analysis (Progressive Workflow)
 
-When implementing the analysis:
+#### Step 1: Write & Debug
 
-1. Write the implementation scripts
-2. **Parameterize all decisions** (see below)
-3. Write results to `results/<universe_id>/<output_id>/`
-4. Validate: `asp validate asp.yaml`
+Write scripts and run them directly (`python scripts/compute.py`). Iterate until
+they produce correct results. But write them **recipe-ready** from the start:
+
+- **Parameterize all decisions** (see below) — accept as CLI args, never hardcode
+- **Write results to convention paths** — `results/<universe_id>/<output_id>.<ext>`
+- **One script per output** — keeps the mapping clear
 
 For single-stage analyses, implementation goes directly in `scripts/`.
-For multi-stage analyses, use sub-analyses and organize by stage: `scripts/<stage_name>/`.
+For multi-stage analyses, organize by stage: `scripts/<stage_name>/`.
 
-### Executing
+#### Step 2: Integrate Recipes
 
-Run recipes to produce outputs:
+When a script works, add a `recipe:` block to its output in `asp.yaml`:
+
+```yaml
+outputs:
+  - id: accuracy
+    type: metric
+    recipe:
+      command: python scripts/evaluate.py
+```
+
+Check integration progress:
+```bash
+prism status                        # shows all outputs and their state
+```
+
+Outputs without recipes show as `no recipe`. Once a recipe is added, they
+become `pending` until materialized.
+
+#### Step 3: Materialize
 
 ```bash
-prism run                           # all outputs, all universes
-prism run accuracy --universe baseline  # specific output + universe
+prism run                           # execute all recipes via Dagster
+prism run accuracy -u baseline      # specific output + universe
 prism status                        # check what's materialized
 prism dev                           # Dagster webserver UI
 ```
 
-Each output with a `recipe:` block in `asp.yaml` can be materialized via Dagster.
-Results are written to `results/<universe_id>/<output_id>/`.
+Phases overlap — some outputs can be materialized while others are still being
+debugged. `prism status` tracks progress across all three states (`no recipe`,
+`pending`, `ok`).
 
 ### Decision Parameterization
 

@@ -17,7 +17,7 @@ Execute ASP analysis recipes via Dagster. Materialize outputs, monitor progress,
 Before running anything:
 
 1. **Validate the spec**: `asp validate asp.yaml`
-2. **Check recipes exist**: Look at `asp.yaml` outputs — each output that should be computed needs a `recipe:` block
+2. **Check recipe coverage**: Run `prism status` to see which outputs have recipes — only those will be executed
 3. **Verify container images**: If recipes reference container images, ensure they're accessible
 4. **Check universe exists**: `ls universes/` — at least `baseline.yaml` should exist
 
@@ -75,7 +75,14 @@ prism dev
 
 The status table shows each output vs universe:
 - `ok` — output directory exists with files
-- `not run` — output hasn't been materialized yet
+- `pending` — has recipe, not yet materialized
+- `no recipe` — output declared but no recipe block yet
+
+### Partial Execution
+
+`prism run` only materializes outputs that have recipes. Outputs still in
+development (showing `no recipe` in `prism status`) are skipped — this is
+expected during progressive development. Add recipes as scripts become ready.
 
 ---
 

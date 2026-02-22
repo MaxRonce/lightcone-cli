@@ -51,8 +51,8 @@ class TestIntegration:
         assert (project_dir / "results").is_dir()
         assert (project_dir / "scripts").is_dir()
 
-    def test_status_shows_not_run(self, project_dir):
-        """Status should show 'not run' when nothing has been materialized."""
+    def test_status_shows_pending(self, project_dir):
+        """Status should show 'pending' when nothing has been materialized."""
         # Ensure a universe exists
         (project_dir / "universes" / "baseline.yaml").write_text(
             "id: baseline\ndecisions: {}\n"
@@ -60,8 +60,8 @@ class TestIntegration:
         from prism.dagster.status import get_output_status
 
         status = get_output_status(project_dir, "baseline")
-        assert status["cleaned"] == "not_run"
-        assert status["result"] == "not_run"
+        assert status["cleaned"] == "pending"
+        assert status["result"] == "pending"
 
     def test_status_shows_materialized(self, project_dir):
         """Status should show 'materialized' when output files exist."""
@@ -77,7 +77,7 @@ class TestIntegration:
 
         status = get_output_status(project_dir, "baseline")
         assert status["cleaned"] == "materialized"
-        assert status["result"] == "not_run"
+        assert status["result"] == "pending"
 
     def test_status_cli_output(self, project_dir, runner, monkeypatch):
         """prism status should run without error."""
@@ -87,7 +87,7 @@ class TestIntegration:
         )
         result = runner.invoke(main, ["status", "--universe", "baseline"])
         assert result.exit_code == 0
-        assert "cleaned" in result.output or "not run" in result.output
+        assert "cleaned" in result.output or "pending" in result.output
 
     def test_target_save_and_load(self, tmp_path, monkeypatch):
         """Target config round-trip."""

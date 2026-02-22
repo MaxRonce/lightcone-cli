@@ -496,7 +496,7 @@ def run(outputs: tuple[str, ...], universe: str | None, target: str | None) -> N
     # Execute
     try:
         result = dg.materialize(
-            assets=list(defs.get_asset_graph().assets),
+            assets=list(defs.assets),
             selection=selection,
         )
         if result.success:
@@ -532,7 +532,6 @@ def status(universe: str | None) -> None:
     spec = load_yaml(project_path / "asp.yaml")
     name = spec.get("name", "Unknown")
     outputs = get_outputs(spec)
-    recipe_outputs = [o for o in outputs if o.get("recipe")]
 
     if universe:
         all_status = {universe: get_output_status(project_path, universe)}
@@ -545,29 +544,39 @@ def status(universe: str | None) -> None:
 
     from rich.table import Table
 
-    table = Table(title=f"{name} — Materialization Status")
+    table = Table(title=f"{name} — Output Status")
     table.add_column("Output", style="cyan")
     for uid in all_status:
         table.add_column(uid)
 
+    recipe_count = 0
+    total_outputs = len(outputs)
     materialized = 0
-    total = 0
-    for out in recipe_outputs:
-        out_id = out["id"]
+    total_cells = 0
+    for out in outputs:
+        out_id = out.get("id")
+        if not out_id:
+            continue
+        has_recipe = bool(out.get("recipe"))
+        if has_recipe:
+            recipe_count += 1
         row = [out_id]
         for uid, universe_status in all_status.items():
-            s = universe_status.get(out_id, "not_run")
-            total += 1
+            s = universe_status.get(out_id, "no_recipe")
+            if has_recipe:
+                total_cells += 1
             if s == "materialized":
                 materialized += 1
                 row.append("[green]ok[/green]")
+            elif s == "pending":
+                row.append("[dim]pending[/dim]")
             else:
-                row.append("[dim]not run[/dim]")
+                row.append("[yellow]no recipe[/yellow]")
         table.add_row(*row)
 
     console.print(table)
-    console.print(f"\n  [green]{materialized}[/green] materialized  "
-                  f"[dim]{total - materialized}[/dim] pending")
+    console.print(f"\n  Recipes: {recipe_count}/{total_outputs} outputs integrated")
+    console.print(f"  Materialized: {materialized}/{total_cells} runs")
 
 
 @main.command()

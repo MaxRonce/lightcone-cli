@@ -17,15 +17,17 @@ prism status
 Shows a table of all outputs vs all universes:
 
 ```
-  ASP Analysis: my_analysis (3 outputs, 2 universes)
+  my_analysis — Output Status
 
-  Output             baseline    experiment1
-  ---                ---         ---
-  cleaned_data       ok 2m ago   ok 1m ago
-  trained_model      ok 1m ago   not run
-  accuracy           not run     not run
+  Output             baseline      experiment1
+  ---                ---           ---
+  cleaned_data       ok            ok
+  trained_model      ok            pending
+  accuracy           pending       pending
+  visualization      no recipe     no recipe
 
-  3 materialized  3 pending
+  Recipes: 3/4 outputs integrated
+  Materialized: 3/6 runs
 ```
 
 ### Filter by Universe
@@ -38,8 +40,19 @@ prism status --universe baseline
 
 | Status | Meaning |
 |--------|---------|
-| `ok` | Output directory exists and contains files |
-| `not run` | Output has not been materialized |
+| `ok` | Output has recipe and results exist |
+| `pending` | Output has recipe but not yet materialized |
+| `no recipe` | Output declared but no recipe block yet |
+
+## Integration Progress
+
+Outputs progress through three states as development proceeds:
+
+`no recipe` → `pending` → `ok`
+
+1. **no recipe** — Output is declared in `asp.yaml` but has no `recipe:` block. The script is still being written or debugged.
+2. **pending** — A `recipe:` block has been added. The output is ready for `prism run` but hasn't been materialized yet.
+3. **ok** — The recipe has been executed and results exist on disk.
 
 ## Re-Materializing
 

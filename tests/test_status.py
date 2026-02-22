@@ -6,7 +6,7 @@ from prism.dagster.status import get_all_universe_status, get_output_status
 
 class TestOutputStatus:
     def test_no_results_dir(self, tmp_path):
-        """Status should show 'not run' when no results exist."""
+        """Status should show 'pending' when recipe exists but no results."""
         asp_yaml = tmp_path / "asp.yaml"
         asp_yaml.write_text("""
 version: "1.0"
@@ -19,7 +19,7 @@ outputs:
       command: python run.py
 """)
         status = get_output_status(tmp_path, "baseline")
-        assert status["result"] == "not_run"
+        assert status["result"] == "pending"
 
     def test_results_exist(self, tmp_path):
         """Status should show 'materialized' when output files exist."""
@@ -39,6 +39,51 @@ outputs:
         (result_dir / "output.json").write_text("{}")
         status = get_output_status(tmp_path, "baseline")
         assert status["result"] == "materialized"
+
+    def test_output_without_recipe(self, tmp_path):
+        """Output with no recipe should show 'no_recipe'."""
+        asp_yaml = tmp_path / "asp.yaml"
+        asp_yaml.write_text("""
+version: "1.0"
+name: test
+inputs: []
+outputs:
+  - id: result
+    type: metric
+    description: "A metric with no recipe yet"
+""")
+        status = get_output_status(tmp_path, "baseline")
+        assert status["result"] == "no_recipe"
+
+    def test_mixed_states(self, tmp_path):
+        """All three states should coexist."""
+        asp_yaml = tmp_path / "asp.yaml"
+        asp_yaml.write_text("""
+version: "1.0"
+name: test
+inputs: []
+outputs:
+  - id: done_output
+    type: metric
+    recipe:
+      command: python done.py
+  - id: pending_output
+    type: metric
+    recipe:
+      command: python pending.py
+  - id: no_recipe_output
+    type: figure
+    description: "Not integrated yet"
+""")
+        # Materialize only done_output
+        result_dir = tmp_path / "results" / "baseline" / "done_output"
+        result_dir.mkdir(parents=True)
+        (result_dir / "output.json").write_text("{}")
+
+        status = get_output_status(tmp_path, "baseline")
+        assert status["done_output"] == "materialized"
+        assert status["pending_output"] == "pending"
+        assert status["no_recipe_output"] == "no_recipe"
 
 
 class TestAllUniverseStatus:
@@ -88,4 +133,4 @@ outputs:
         assert "baseline" in result
         assert "alt" in result
         assert result["baseline"]["result"] == "materialized"
-        assert result["alt"]["result"] == "not_run"
+        assert result["alt"]["result"] == "pending"

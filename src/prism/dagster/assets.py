@@ -72,7 +72,7 @@ def _build_single_asset(
             "container": container or "default",
         },
     )
-    def _asset(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
+    def _asset(context) -> dg.MaterializeResult:
         params = _load_universe_params(project_path, universe_id)
         result = runner.execute(
             command=command,
@@ -83,11 +83,19 @@ def _build_single_asset(
             resources=resources,
             params=params,
         )
+        if result.metadata.get("stdout"):
+            context.log.info(result.metadata["stdout"])
+        if result.exit_code != 0:
+            stderr = result.metadata.get("stderr", "")
+            raise RuntimeError(
+                f"Recipe for '{output_id}' failed (exit code {result.exit_code})"
+                f"{': ' + stderr if stderr else ''}"
+            )
         return dg.MaterializeResult(
             metadata={
                 "exit_code": result.exit_code,
                 "output_path": str(result.output_path),
-                **result.metadata,
+                "backend": result.metadata.get("backend", "unknown"),
             }
         )
 

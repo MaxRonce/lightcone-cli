@@ -284,14 +284,17 @@ Then the Next Up block:
 
 ▶ Next Up
 
-Start building — ask me to implement a section
-(e.g. "implement the preprocessing stage")
+Start building — write scripts, run them directly, iterate.
+Write them recipe-ready (parameterized, results to convention paths).
+See CLAUDE.md for conventions.
 
-After implementation, run with `/prism-run`
+When scripts work, integrate:
+- Add recipe: blocks to outputs in asp.yaml
+- Check progress: prism status
+- Execute via Dagster: /prism-run
 
 Every decision becomes a parameter — no hardcoded values.
 New decisions can be added later.
-See CLAUDE.md for details.
 
 <sub>/clear first → CLAUDE.md has everything needed to pick back up</sub>
 
@@ -299,7 +302,7 @@ See CLAUDE.md for details.
 
 Also available:
 - `/prism-insights` — add literature support to decisions
-- `/prism-run` — execute recipes and materialize outputs
+- `/prism-status` — check output and integration status
 
 ───────────────────────────────────────────────────────────────
 ```
