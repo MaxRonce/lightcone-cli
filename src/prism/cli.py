@@ -183,7 +183,6 @@ decisions:
   example_method:
     label: "Example Method Choice"
     type: method
-    importance: 3
     rationale: "TODO: Explain why this decision matters"
     default: option_a
     options:
