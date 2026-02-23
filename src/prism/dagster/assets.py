@@ -1,14 +1,37 @@
 """Asset factory — generates Dagster assets from asp.yaml output recipes."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import dagster as dg
 from asp.helpers import get_outputs, load_yaml
 
-from prism.container import resolve_container_spec
+from prism.container import resolve_container_for_slurm, resolve_container_spec
 from prism.dagster.runner import ASPContainerRunner
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_container(
+    spec: str | dict[str, Any] | None,
+    project_path: Path,
+    project_name: str,
+    container_runtime: str | None = None,
+) -> str | None:
+    """Resolve a container spec, dispatching to the right builder.
+
+    When *container_runtime* is set (i.e. we are targeting SLURM), uses
+    ``resolve_container_for_slurm`` which handles podman-hpc build/migrate
+    and shifterimg pull automatically.  Otherwise falls back to the
+    default Docker-based ``resolve_container_spec``.
+    """
+    if container_runtime:
+        return resolve_container_for_slurm(
+            spec, project_path, project_name, container_runtime,
+        )
+    return resolve_container_spec(spec, project_path, project_name)
 
 
 def build_asset_definitions(
@@ -18,6 +41,7 @@ def build_asset_definitions(
     project_path: Path | None = None,
     project_name: str | None = None,
     no_build: bool = False,
+    container_runtime: str | None = None,
 ) -> list[dg.AssetsDefinition]:
     """Generate one @asset per output with a recipe."""
     outputs = get_outputs(spec)
@@ -27,7 +51,9 @@ def build_asset_definitions(
     if raw_default is not None and not no_build:
         _name = project_name or spec.get("name") or "project"
         _path = project_path or Path.cwd()
-        default_container = resolve_container_spec(raw_default, _path, _name)
+        default_container = _resolve_container(
+            raw_default, _path, _name, container_runtime,
+        )
     else:
         default_container = raw_default if isinstance(raw_default, str) else None
 
@@ -41,7 +67,7 @@ def build_asset_definitions(
             _build_single_asset(
                 output_id, recipe, runner, universe_id, project_path,
                 project_name=project_name, default_container=default_container,
-                no_build=no_build,
+                no_build=no_build, container_runtime=container_runtime,
             )
         )
 
@@ -70,6 +96,7 @@ def _build_single_asset(
     project_name: str | None = None,
     default_container: str | None = None,
     no_build: bool = False,
+    container_runtime: str | None = None,
 ) -> dg.AssetsDefinition:
     """Build a single Dagster asset from an output recipe."""
     input_ids = recipe.get("inputs") or []
@@ -79,7 +106,7 @@ def _build_single_asset(
     if raw_container is not None and not no_build:
         _name = project_name or "project"
         _path = project_path or Path.cwd()
-        container = resolve_container_spec(raw_container, _path, _name)
+        container = _resolve_container(raw_container, _path, _name, container_runtime)
     elif raw_container is not None and isinstance(raw_container, str):
         container = raw_container
     else:
@@ -132,27 +159,40 @@ def build_definitions(
 ) -> dg.Definitions:
     """Build complete Dagster Definitions from an ASP project.
 
-    This is the main entry point for the Dagster integration.
+    This is the main entry point for the Dagster integration.  When a SLURM
+    target is specified, container images are automatically built (podman-hpc)
+    or pulled (shifter) before asset definitions are constructed.
     """
     from prism.dagster.targets import load_target
 
     spec = load_yaml(project_path / "asp.yaml")
     project_name = spec.get("name") or project_path.name
 
+    # Determine the container runtime from the target config (if SLURM).
+    target_config = None
+    container_runtime: str | None = None
+    if target:
+        target_config = load_target(target)
+        if target_config is None:
+            raise ValueError(f"Unknown target: {target}")
+        if target_config.get("backend") == "slurm":
+            container_runtime = (
+                target_config.get("scheduler", {}).get("container_runtime", "podman-hpc")
+            )
+
     # Resolve analysis-level container spec to a string for the runner.
+    # For SLURM targets this triggers podman-hpc build/migrate or
+    # shifterimg pull automatically.
     raw_container = spec.get("container")
     if not no_build:
-        default_container = resolve_container_spec(
-            raw_container, project_path, project_name
+        default_container = _resolve_container(
+            raw_container, project_path, project_name, container_runtime,
         )
     else:
         default_container = raw_container if isinstance(raw_container, str) else None
 
     # Build runner from target config
-    if target:
-        target_config = load_target(target)
-        if target_config is None:
-            raise ValueError(f"Unknown target: {target}")
+    if target_config:
         runner = ASPContainerRunner(
             project_root=str(project_path),
             backend=target_config.get("backend", "docker"),
@@ -169,6 +209,7 @@ def build_definitions(
     assets = build_asset_definitions(
         spec, runner=runner, universe_id=universe_id, project_path=project_path,
         project_name=project_name, no_build=no_build,
+        container_runtime=container_runtime,
     )
 
     return dg.Definitions(assets=assets)

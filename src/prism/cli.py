@@ -529,7 +529,13 @@ def run(
 
 @main.command()
 @click.option("--force", is_flag=True, help="Rebuild images even if they already exist")
-def build(force: bool) -> None:
+@click.option(
+    "--runtime", "-r",
+    type=click.Choice(["docker", "podman-hpc", "shifter"]),
+    default="docker",
+    help="Container runtime to build with (default: docker)",
+)
+def build(force: bool, runtime: str) -> None:
     """Build container images from Containerfile specs in asp.yaml.
 
     Scans the analysis specification for container build specs (both
@@ -537,13 +543,22 @@ def build(force: bool) -> None:
     Images are content-addressed — rebuilds only happen when the
     Containerfile or dependency files change.
 
+    For NERSC targets, use --runtime to build with podman-hpc (which
+    also migrates images for compute nodes) or pull pre-built images
+    with shifter.
+
     Examples:
-        prism build             # build missing images
-        prism build --force     # rebuild all images
+        prism build                      # build with docker
+        prism build --runtime podman-hpc # build + migrate for NERSC
+        prism build --force              # rebuild all images
     """
     from asp.helpers import get_outputs, load_yaml
 
-    from prism.container import ContainerBuildError, resolve_container_spec
+    from prism.container import (
+        ContainerBuildError,
+        resolve_container_for_slurm,
+        resolve_container_spec,
+    )
 
     project_path = Path.cwd()
     if not (project_path / "asp.yaml").exists():
@@ -554,32 +569,48 @@ def build(force: bool) -> None:
     project_name = spec.get("name") or project_path.name
 
     # Collect all unique container build specs.
-    build_specs: list[tuple[str, dict]] = []  # (label, spec_dict)
+    build_specs: list[tuple[str, str | dict]] = []  # (label, spec)
     raw_default = spec.get("container")
-    if isinstance(raw_default, dict) and "build" in raw_default:
-        build_specs.append(("analysis-level", raw_default))
+    if raw_default is not None:
+        if isinstance(raw_default, dict) and "build" in raw_default:
+            build_specs.append(("analysis-level", raw_default))
+        elif isinstance(raw_default, str) and runtime != "docker":
+            # Pre-built images need pull/migrate for HPC runtimes
+            build_specs.append(("analysis-level", raw_default))
 
     for output_def in get_outputs(spec):
         recipe = output_def.get("recipe")
         if not recipe:
             continue
         raw = recipe.get("container")
-        if isinstance(raw, dict) and "build" in raw:
-            label = f"recipe:{output_def.get('id', '?')}"
-            build_specs.append((label, raw))
+        if raw is not None:
+            if isinstance(raw, dict) and "build" in raw:
+                label = f"recipe:{output_def.get('id', '?')}"
+                build_specs.append((label, raw))
+            elif isinstance(raw, str) and runtime != "docker":
+                label = f"recipe:{output_def.get('id', '?')}"
+                build_specs.append((label, raw))
 
     if not build_specs:
         console.print("[dim]No container build specs found in asp.yaml.[/dim]")
         return
 
-    console.print(f"[bold]Found {len(build_specs)} container build spec(s)[/bold]\n")
+    console.print(
+        f"[bold]Found {len(build_specs)} container spec(s) "
+        f"(runtime: {runtime})[/bold]\n"
+    )
 
     for label, bspec in build_specs:
         try:
-            tag = resolve_container_spec(
-                bspec, project_path, project_name, force=force,
-            )
-            console.print(f"  [green]built[/green]  {label} -> {tag}")
+            if runtime in ("podman-hpc", "shifter"):
+                tag = resolve_container_for_slurm(
+                    bspec, project_path, project_name, runtime, force=force,
+                )
+            else:
+                tag = resolve_container_spec(
+                    bspec, project_path, project_name, force=force,
+                )
+            console.print(f"  [green]ready[/green]  {label} -> {tag}")
         except ContainerBuildError as e:
             console.print(f"  [red]fail[/red]   {label}: {e}")
 
@@ -731,21 +762,33 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
     Sets up connection details, scheduler config, and resource limits
     for remote execution backends (SLURM, etc.).
 
+    Known HPC sites (NERSC Perlmutter, OLCF Frontier, ALCF Polaris, ...)
+    are auto-detected from the target name and pre-filled with sensible
+    defaults.  You can override any value during the wizard.
+
     Examples:
         prism remote setup perlmutter
         prism remote setup --list
     """
+    from prism.dagster.sites import detect_site, get_site_defaults, list_known_sites
     from prism.dagster.targets import list_targets, save_target
 
     if list_targets_flag:
         saved = list_targets()
         if not saved:
             console.print("[dim]No saved targets.[/dim]")
-            console.print("Run [cyan]prism remote setup <name>[/cyan] to configure one.")
         else:
             console.print("[bold]Saved targets:[/bold]")
             for t in saved:
                 console.print(f"  - {t}")
+
+        known = list_known_sites()
+        console.print(f"\n[bold]Known sites[/bold] (auto-detected defaults):")
+        for key, display in known:
+            console.print(f"  - [cyan]{key}[/cyan]  ({display})")
+        console.print(
+            "\nRun [cyan]prism remote setup <name>[/cyan] to configure a target."
+        )
         return
 
     if name is None:
@@ -754,35 +797,107 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
 
     console.print(f"\n[bold]Setting up target: [cyan]{name}[/cyan][/bold]\n")
 
+    # Try to detect a known site from the target name.
+    site_key = detect_site(name)
+    site: dict[str, Any] = {}
+    if site_key:
+        site = get_site_defaults(site_key) or {}
+        display = site.get("display_name", site_key)
+        console.print(
+            f"  Detected known site: [cyan]{display}[/cyan] "
+            f"(using site defaults)\n"
+        )
+
+    # --- Connection ---
+    site_conn = site.get("connection", {})
+    site_sched = site.get("scheduler", {})
+    site_limits = site.get("resource_limits", {})
+    site_partitions = site.get("partitions", {})
+
     backend = click.prompt(
-        "  Backend", type=click.Choice(["slurm", "pbs"]), default="slurm"
+        "  Backend",
+        type=click.Choice(["slurm", "pbs"]),
+        default=site.get("backend", "slurm"),
     )
-    hostname = click.prompt("  Hostname")
-    username = click.prompt("  Username", default=os.environ.get("USER", ""))
+    hostname = click.prompt(
+        "  Hostname",
+        default=site_conn.get("hostname", ""),
+    )
+    username = click.prompt(
+        "  Username",
+        default=os.environ.get("USER", ""),
+    )
     account = click.prompt("  Account/allocation")
-    partition = click.prompt("  Partition", default="regular")
+
+    # If the site has named partition presets, let the user pick one.
+    partition_default = "regular"
+    constraint_default = ""
+    container_flags_default: list[str] = []
+    if site_partitions:
+        partition_keys = list(site_partitions.keys())
+        console.print(f"\n  [bold]Available partition presets:[/bold]")
+        for pk in partition_keys:
+            pinfo = site_partitions[pk]
+            desc_parts = []
+            if pinfo.get("constraint"):
+                desc_parts.append(f"constraint={pinfo['constraint']}")
+            if pinfo.get("container_flags"):
+                desc_parts.append(f"flags={' '.join(pinfo['container_flags'])}")
+            desc = ", ".join(desc_parts) if desc_parts else "(no constraints)"
+            console.print(f"    - [cyan]{pk}[/cyan]: {desc}")
+
+        partition = click.prompt(
+            "\n  Partition",
+            type=click.Choice(partition_keys + ["custom"]),
+            default=partition_keys[0],
+        )
+        if partition != "custom" and partition in site_partitions:
+            pinfo = site_partitions[partition]
+            constraint_default = pinfo.get("constraint", "")
+            container_flags_default = pinfo.get("container_flags", [])
+        else:
+            partition = click.prompt("  Custom partition name")
+    else:
+        partition = click.prompt("  Partition", default="regular")
+
     container_runtime = click.prompt(
         "  Container runtime",
         type=click.Choice(["podman-hpc", "shifter", "singularity"]),
-        default="podman-hpc",
+        default=site_sched.get("container_runtime", "podman-hpc"),
     )
 
-    qos = click.prompt("  QOS", default="regular")
+    qos = click.prompt(
+        "  QOS",
+        default=site_sched.get("qos", "regular"),
+    )
     constraint = click.prompt(
-        "  Constraint (e.g., cpu, gpu, gpu&hbm80g)", default="",
+        "  Constraint (e.g., cpu, gpu, gpu&hbm80g)",
+        default=constraint_default,
     )
 
-    # Container runtime flags (NERSC-specific: --gpu, --mpi, --nccl, etc.)
     container_flags_str = click.prompt(
-        "  Container flags (e.g., --gpu --mpi --nccl)", default="",
+        "  Container flags (e.g., --gpu --mpi --nccl)",
+        default=" ".join(container_flags_default),
     )
     container_flags = container_flags_str.split() if container_flags_str.strip() else []
 
     console.print("\n  [bold]Resource limits[/bold]")
-    max_nodes = click.prompt("    Max nodes per job", type=int, default=4)
-    max_walltime = click.prompt("    Max walltime (minutes)", type=int, default=240)
-    max_concurrent = click.prompt("    Max concurrent jobs", type=int, default=8)
-    max_node_hours = click.prompt("    Max node-hours per session", type=int, default=32)
+    max_nodes = click.prompt(
+        "    Max nodes per job", type=int,
+        default=site_limits.get("max_nodes", 4),
+    )
+    max_walltime = click.prompt(
+        "    Max walltime (minutes)", type=int,
+        default=site_limits.get("max_walltime_minutes", 240),
+    )
+    max_concurrent = click.prompt(
+        "    Max concurrent jobs", type=int,
+        default=site_limits.get("max_concurrent_jobs", 8),
+    )
+    max_node_hours = click.prompt(
+        "    Max node-hours per session", type=int,
+        default=site_limits.get("max_node_hours_per_session", 32),
+    )
 
     scheduler_config: dict[str, Any] = {
         "account": account,
@@ -796,7 +911,7 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
     if container_flags:
         scheduler_config["container_flags"] = container_flags
 
-    config = {
+    config: dict[str, Any] = {
         "name": name,
         "backend": backend,
         "connection": {"hostname": hostname, "username": username},
@@ -808,6 +923,8 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
             "max_node_hours_per_session": max_node_hours,
         },
     }
+    if site_key:
+        config["site"] = site_key
 
     path = save_target(name, config)
     console.print(f"\n[green]✓[/green] Saved to [cyan]{path}[/cyan]")
