@@ -195,6 +195,10 @@ prism run trained_model --target perlmutter --universe baseline
 
 Container images are automatically built (`podman-hpc build`) and migrated for compute nodes, or pulled via `shifterimg` for Shifter targets. Use `prism build --runtime podman-hpc` to pre-build without running.
 
+### Local Environment vs Container Execution
+
+Scripts run inside containers on compute nodes. You do **not** need to install Python packages locally for HPC execution — `requirements.txt` and the `Containerfile` define the execution environment. A local `.venv` is useful for IDE support and linting, but `prism run --target` uses the container image exclusively.
+
 ### Example recipe for GPU jobs
 
 ```yaml
@@ -205,7 +209,6 @@ outputs:
       command: python scripts/train.py
       container: ghcr.io/myorg/myanalysis:latest
       resources:
-        nodes: 1
         cpus: 64
         gpus: 4
         memory: 256GB
@@ -232,6 +235,10 @@ cat results/.slurm/<output_id>_<universe_id>.err
 | MPI performance poor | Add `--mpi` to container flags: `prism remote edit perlmutter` |
 | NCCL errors on multi-GPU | Add `--nccl` (and optionally `--cuda-mpi`) to container flags |
 | Job not found in `prism status` | Give sacct a moment — it may lag by ~30s after completion |
+| SLURM rejects job (no time limit) | Prism defaults to the target's `max_walltime_minutes` (or 30 minutes). For precise control, add `resources: { time_limit: 2h }` to the recipe in `asp.yaml`. |
+| `--prior_range` not recognized by script | Decision IDs use underscores → Prism passes `--prior_range`. Scripts must use underscores in argparse: `parser.add_argument('--prior_range')` |
+| GPU allocation wasted on CPU-only work | Edit target: `prism remote edit <name>`, set `partition: cpu` and `constraint: cpu`. GPU partitions waste allocation hours on CPU workloads. |
+| `prism status` shows "Container: not built" | Expected when targeting HPC — `prism run --target` builds/migrates containers automatically on the target. Run `prism build` locally only for local Docker execution. |
 
 ---
 
