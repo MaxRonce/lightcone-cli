@@ -174,6 +174,67 @@ Configure targets with `prism remote setup <name>`.
 
 ---
 
+## Running on NERSC (Perlmutter)
+
+Perlmutter uses SLURM with **podman-hpc** (recommended) or **shifter** as the container runtime. Prism handles everything automatically: building/migrating container images, generating sbatch scripts, submitting jobs, and polling for completion.
+
+### One-Time Setup
+
+Configure the Perlmutter target (the wizard auto-detects Perlmutter and pre-fills most defaults — you only need the user's account/allocation):
+
+```bash
+prism remote setup perlmutter
+```
+
+### Running
+
+```bash
+prism run --target perlmutter
+prism run trained_model --target perlmutter --universe baseline
+```
+
+Container images are automatically built (`podman-hpc build`) and migrated for compute nodes, or pulled via `shifterimg` for Shifter targets. Use `prism build --runtime podman-hpc` to pre-build without running.
+
+### Example recipe for GPU jobs
+
+```yaml
+outputs:
+  - id: trained_model
+    type: data
+    recipe:
+      command: python scripts/train.py
+      container: ghcr.io/myorg/myanalysis:latest
+      resources:
+        nodes: 1
+        cpus: 64
+        gpus: 4
+        memory: 256GB
+        time_limit: 2h
+```
+
+The `gpus:` field automatically adds `--gpu` to the `podman-hpc` invocation and `#SBATCH --gpus=<n>` to the script.
+
+### Monitoring SLURM jobs
+
+```bash
+prism status
+squeue -u $USER
+sacct -j <job_id> --format=JobID,State,ExitCode,Elapsed
+cat results/.slurm/<output_id>_<universe_id>.out
+cat results/.slurm/<output_id>_<universe_id>.err
+```
+
+### Common NERSC Issues
+
+| Problem | Solution |
+|---------|----------|
+| `sbatch: command not found` | You must run `prism run --target` from a Perlmutter login node |
+| MPI performance poor | Add `--mpi` to container flags: `prism remote edit perlmutter` |
+| NCCL errors on multi-GPU | Add `--nccl` (and optionally `--cuda-mpi`) to container flags |
+| Job not found in `prism status` | Give sacct a moment — it may lag by ~30s after completion |
+
+---
+
 ## Rules
 
 - **Always validate first** — `asp validate asp.yaml` before running

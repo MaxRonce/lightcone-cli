@@ -9,11 +9,16 @@ import pytest
 from prism.container import (
     ContainerBuildError,
     build_image,
+    build_image_podman_hpc,
     compute_image_tag,
     find_dependency_files,
     get_container_status,
     image_exists_locally,
+    image_exists_podman_hpc,
+    pull_shifterimg,
+    resolve_container_for_slurm,
     resolve_container_spec,
+    shifterimg_lookup,
 )
 
 
@@ -229,3 +234,153 @@ class TestGetContainerStatus:
         assert s.type == "build"
         assert s.exists is True
         assert s.image is not None
+
+
+# ---------------------------------------------------------------------------
+# HPC container runtimes
+# ---------------------------------------------------------------------------
+
+
+class TestImageExistsPodmanHpc:
+    @patch("prism.container.subprocess.run")
+    def test_exists(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        assert image_exists_podman_hpc("my-image:v1") is True
+
+    @patch("prism.container.subprocess.run")
+    def test_not_exists(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1)
+        assert image_exists_podman_hpc("my-image:v1") is False
+
+    @patch("prism.container.subprocess.run", side_effect=FileNotFoundError)
+    def test_not_installed(self, mock_run):
+        assert image_exists_podman_hpc("my-image:v1") is False
+
+
+class TestBuildImagePodmanHpc:
+    @patch("prism.container._podman_hpc_migrate")
+    @patch("prism.container.subprocess.run")
+    def test_success(self, mock_run, mock_migrate, project):
+        mock_run.return_value = MagicMock(returncode=0, stdout="built", stderr="")
+        result = build_image_podman_hpc(
+            "prism-test-abc123", project / "Containerfile", project,
+        )
+        assert result.tag == "prism-test-abc123"
+        assert result.already_existed is False
+        # Should also have migrated
+        mock_migrate.assert_called_once_with("prism-test-abc123")
+
+    @patch("prism.container.subprocess.run")
+    def test_failure(self, mock_run, project):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="build error")
+        with pytest.raises(ContainerBuildError, match="podman-hpc build failed"):
+            build_image_podman_hpc(
+                "prism-test-abc123", project / "Containerfile", project,
+            )
+
+    @patch("prism.container.subprocess.run", side_effect=FileNotFoundError)
+    def test_not_installed(self, mock_run, project):
+        with pytest.raises(ContainerBuildError, match="podman-hpc is not installed"):
+            build_image_podman_hpc(
+                "prism-test-abc123", project / "Containerfile", project,
+            )
+
+
+class TestShifterimgLookup:
+    @patch("prism.container.subprocess.run")
+    def test_exists(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        assert shifterimg_lookup("registry.nersc.gov/proj/img:v1") is True
+
+    @patch("prism.container.subprocess.run")
+    def test_not_exists(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1)
+        assert shifterimg_lookup("registry.nersc.gov/proj/img:v1") is False
+
+    @patch("prism.container.subprocess.run", side_effect=FileNotFoundError)
+    def test_not_installed(self, mock_run):
+        assert shifterimg_lookup("registry.nersc.gov/proj/img:v1") is False
+
+
+class TestPullShifterimg:
+    @patch("prism.container.subprocess.run")
+    def test_success(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        pull_shifterimg("registry.nersc.gov/proj/img:v1")
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["shifterimg", "pull", "registry.nersc.gov/proj/img:v1"]
+
+    @patch("prism.container.subprocess.run")
+    def test_failure(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="pull error")
+        with pytest.raises(ContainerBuildError, match="shifterimg pull failed"):
+            pull_shifterimg("registry.nersc.gov/proj/img:v1")
+
+    @patch("prism.container.subprocess.run", side_effect=FileNotFoundError)
+    def test_not_installed(self, mock_run):
+        with pytest.raises(ContainerBuildError, match="shifterimg is not installed"):
+            pull_shifterimg("registry.nersc.gov/proj/img:v1")
+
+
+class TestResolveContainerForSlurm:
+    def test_none_returns_none(self, project):
+        assert resolve_container_for_slurm(None, project, "test", "podman-hpc") is None
+
+    @patch("prism.container.image_exists_podman_hpc", return_value=True)
+    def test_prebuilt_podman_already_exists(self, mock_exists, project):
+        result = resolve_container_for_slurm(
+            "my-image:v1", project, "test", "podman-hpc",
+        )
+        assert result == "my-image:v1"
+
+    @patch("prism.container._podman_hpc_migrate")
+    @patch("prism.container.image_exists_podman_hpc", return_value=False)
+    def test_prebuilt_podman_migrates(self, mock_exists, mock_migrate, project):
+        result = resolve_container_for_slurm(
+            "my-image:v1", project, "test", "podman-hpc",
+        )
+        assert result == "my-image:v1"
+        mock_migrate.assert_called_once_with("my-image:v1")
+
+    @patch("prism.container.shifterimg_lookup", return_value=True)
+    def test_prebuilt_shifter_already_exists(self, mock_lookup, project):
+        result = resolve_container_for_slurm(
+            "my-image:v1", project, "test", "shifter",
+        )
+        assert result == "my-image:v1"
+
+    @patch("prism.container.pull_shifterimg")
+    @patch("prism.container.shifterimg_lookup", return_value=False)
+    def test_prebuilt_shifter_pulls(self, mock_lookup, mock_pull, project):
+        result = resolve_container_for_slurm(
+            "my-image:v1", project, "test", "shifter",
+        )
+        assert result == "my-image:v1"
+        mock_pull.assert_called_once_with("my-image:v1")
+
+    @patch("prism.container.build_image_podman_hpc")
+    @patch("prism.container.image_exists_podman_hpc", return_value=False)
+    def test_build_spec_podman(self, mock_exists, mock_build, project):
+        mock_build.return_value = MagicMock(tag="prism-test-abc123")
+        spec = {"build": "Containerfile"}
+        tag = resolve_container_for_slurm(spec, project, "test", "podman-hpc")
+        assert tag is not None
+        assert tag.startswith("prism-test-")
+        mock_build.assert_called_once()
+
+    @patch("prism.container.image_exists_podman_hpc", return_value=True)
+    def test_build_spec_podman_cached(self, mock_exists, project):
+        spec = {"build": "Containerfile"}
+        tag = resolve_container_for_slurm(spec, project, "test", "podman-hpc")
+        assert tag is not None
+        assert tag.startswith("prism-test-")
+
+    def test_build_spec_shifter_raises(self, project):
+        spec = {"build": "Containerfile"}
+        with pytest.raises(ContainerBuildError, match="Shifter does not support building"):
+            resolve_container_for_slurm(spec, project, "test", "shifter")
+
+    def test_missing_containerfile(self, tmp_path):
+        spec = {"build": "NoSuchFile"}
+        with pytest.raises(ContainerBuildError, match="Containerfile not found"):
+            resolve_container_for_slurm(spec, tmp_path, "test", "podman-hpc")
