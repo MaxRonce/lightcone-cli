@@ -710,7 +710,8 @@ def status(universe: str | None) -> None:
 
 @main.command()
 @click.option("--port", "-p", default=3000, type=int, help="Port for Dagster webserver")
-def dev(port: int) -> None:
+@click.option("--universe", "-u", default="baseline", help="Universe to load definitions for")
+def dev(port: int, universe: str) -> None:
     """Launch Dagster webserver UI for the current project.
 
     Opens a web UI showing the asset graph, run history, and
@@ -719,7 +720,10 @@ def dev(port: int) -> None:
     Examples:
         prism dev
         prism dev --port 8080
+        prism dev --universe experiment1
     """
+    import tempfile
+
     project_path = Path.cwd()
     if not (project_path / "asp.yaml").exists():
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
@@ -729,10 +733,27 @@ def dev(port: int) -> None:
     console.print(f"  Open [cyan]http://localhost:{port}[/cyan] in your browser")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
+    # Generate a temporary Python file that builds Dagster Definitions from
+    # the current ASP project.  dagster-webserver discovers assets via -f.
+    defs_code = (
+        "from pathlib import Path\n"
+        "from prism.dagster.assets import build_definitions\n"
+        f"defs = build_definitions(Path({str(project_path)!r}), "
+        f"universe_id={universe!r}, no_build=True)\n"
+    )
+
     try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", prefix="prism_defs_", delete=False,
+        ) as f:
+            f.write(defs_code)
+            defs_file = f.name
+
+        env = {**os.environ, "DAGSTER_HOME": str(project_path)}
         subprocess.run(
-            ["dagster-webserver", "-h", "0.0.0.0", "-p", str(port)],
+            ["dagster-webserver", "-f", defs_file, "-h", "0.0.0.0", "-p", str(port)],
             check=True,
+            env=env,
         )
     except KeyboardInterrupt:
         console.print("\n[dim]Dagster webserver stopped[/dim]")
@@ -740,6 +761,12 @@ def dev(port: int) -> None:
         console.print("[red]Error:[/red] dagster-webserver not found.")
         console.print("  Install with: [cyan]pip install prism\\[dagster][/cyan]")
         raise SystemExit(1)
+    finally:
+        # Clean up the temporary definitions file
+        try:
+            Path(defs_file).unlink(missing_ok=True)
+        except NameError:
+            pass
 
 
 # =============================================================================
