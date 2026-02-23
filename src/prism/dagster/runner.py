@@ -228,6 +228,7 @@ class ASPContainerRunner:
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Generate the sbatch script
+        resource_limits = self.target_config.get("resource_limits", {})
         script = generate_sbatch_script(
             command=command,
             container=container,
@@ -237,6 +238,7 @@ class ASPContainerRunner:
             universe_id=universe_id,
             resources=resources,
             scheduler_config=scheduler,
+            resource_limits=resource_limits,
         )
 
         # Write script to a temp file inside the project so it's on the
@@ -331,10 +333,16 @@ class ASPContainerRunner:
 def translate_resources_to_slurm_directives(
     resources: dict[str, Any],
     scheduler_config: dict[str, Any] | None = None,
+    resource_limits: dict[str, Any] | None = None,
 ) -> list[str]:
     """Translate ASP resource requirements to SLURM #SBATCH directives.
 
     Returns a list of directive strings (without the ``#SBATCH`` prefix).
+
+    When *resource_limits* is provided (non-``None``) and no explicit
+    ``time_limit`` appears in *resources*, a default ``--time`` directive is
+    emitted using ``resource_limits["max_walltime_minutes"]`` (falling back
+    to 30 minutes).  This ensures SLURM jobs always have a walltime.
     """
     scheduler_config = scheduler_config or {}
     directives: list[str] = []
@@ -358,6 +366,16 @@ def translate_resources_to_slurm_directives(
         directives.append(f"--gpus={gpus}")
     if time_limit := resources.get("time_limit"):
         directives.append(f"--time={_normalise_time_limit(time_limit)}")
+    elif resource_limits is not None:
+        # No explicit time_limit — apply a default so SLURM doesn't reject
+        # the job.  Use the target's max_walltime_minutes, or 30 min.
+        default_minutes = resource_limits.get("max_walltime_minutes", 30)
+        logger.warning(
+            "No time_limit in recipe resources; defaulting to %d minutes "
+            "(from resource_limits.max_walltime_minutes)",
+            default_minutes,
+        )
+        directives.append(f"--time={_normalise_time_limit(default_minutes)}")
 
     return directives
 
@@ -394,6 +412,7 @@ def generate_sbatch_script(
     universe_id: str,
     resources: dict[str, Any],
     scheduler_config: dict[str, Any] | None = None,
+    resource_limits: dict[str, Any] | None = None,
 ) -> str:
     """Generate an sbatch script for a recipe execution.
 
@@ -420,7 +439,9 @@ def generate_sbatch_script(
     lines.append(f"#SBATCH --error=results/.slurm/{output_id}_{universe_id}.err")
 
     # Resource directives
-    directives = translate_resources_to_slurm_directives(resources, scheduler_config)
+    directives = translate_resources_to_slurm_directives(
+        resources, scheduler_config, resource_limits=resource_limits,
+    )
 
     # For Shifter, the image is specified as an SBATCH directive
     if container_runtime == "shifter" and container:
