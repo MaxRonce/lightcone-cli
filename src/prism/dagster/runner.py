@@ -333,6 +333,7 @@ class ASPContainerRunner:
 def translate_resources_to_slurm_directives(
     resources: dict[str, Any],
     scheduler_config: dict[str, Any] | None = None,
+    *,
     resource_limits: dict[str, Any] | None = None,
 ) -> list[str]:
     """Translate ASP resource requirements to SLURM #SBATCH directives.

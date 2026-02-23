@@ -154,9 +154,8 @@ class TestSlurmResourceTranslation:
             {"time_limit": "4h"},
             resource_limits={"max_walltime_minutes": 120},
         )
-        assert "--time=04:00:00" in dirs
-        # Should NOT have the resource_limits default
-        assert dirs.count("--time=") == 0 or sum(1 for d in dirs if d.startswith("--time=")) == 1
+        time_directives = [d for d in dirs if d.startswith("--time=")]
+        assert time_directives == ["--time=04:00:00"]
 
     def test_no_resource_limits_no_default(self):
         """Backward compat: no resource_limits param means no default walltime injected."""
@@ -333,7 +332,8 @@ class TestGenerateSbatchScript:
         assert "#SBATCH --time=06:00:00" in script
 
     def test_sbatch_script_default_walltime_30(self, tmp_path):
-        """generate_sbatch_script uses 30-minute fallback when resource_limits has no max_walltime_minutes."""
+        """generate_sbatch_script uses 30-minute fallback when
+        resource_limits has no max_walltime_minutes."""
         script = generate_sbatch_script(
             command="python train.py",
             container=None,
