@@ -67,6 +67,11 @@ How to handle each decision type:
 - **Method decisions** (algorithm choice): accept as a CLI arg, dispatch to
   the appropriate implementation
 
+**Naming convention:** Decision IDs in `asp.yaml` use underscores (e.g.,
+`prior_range`). Prism passes these as CLI arguments with underscores
+(`--prior_range wide`). Scripts must define argparse arguments with underscores
+to match: `parser.add_argument('--prior_range')`, not `--prior-range`.
+
 ### Writing Results
 
 Results use a convention-based layout — no `path` field in `asp.yaml`. File
