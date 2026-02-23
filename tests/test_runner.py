@@ -8,6 +8,7 @@ import pytest
 
 from prism.dagster.runner import (
     ASPContainerRunner,
+    _check_sacct,
     _normalise_time_limit,
     _parse_sbatch_job_id,
     _shell_quote,
@@ -450,3 +451,79 @@ class TestSlurmRunner:
         assert "#SBATCH --image=registry.nersc.gov/proj/analysis:v2" in content
         assert "srun shifter" in content
         assert "podman-hpc" not in content
+
+    @patch("prism.dagster.runner.subprocess.run")
+    def test_slurm_forwards_universe_and_params(self, mock_run, tmp_path):
+        """Universe ID and decision params must appear in the sbatch script command."""
+        mock_submit = MagicMock()
+        mock_submit.returncode = 1  # fail fast; we only care about the script
+        mock_submit.stdout = ""
+        mock_submit.stderr = "error"
+        mock_run.return_value = mock_submit
+
+        runner = ASPContainerRunner(
+            project_root=str(tmp_path),
+            backend="slurm",
+            target_config={
+                "scheduler": {"container_runtime": "podman-hpc", "account": "m1234"},
+            },
+        )
+        runner.execute(
+            command="python scripts/train.py",
+            output_id="model",
+            universe_id="experiment1",
+            container="img:1.0",
+            params={"method": "npe", "lr": "0.001"},
+        )
+
+        script_path = tmp_path / "results" / ".slurm" / "model_experiment1.sh"
+        content = script_path.read_text()
+        assert "--universe experiment1" in content
+        assert "--method npe" in content
+        assert "--lr 0.001" in content
+
+
+# ---------------------------------------------------------------------------
+# sacct exit-code correctness
+# ---------------------------------------------------------------------------
+
+
+class TestCheckSacct:
+    def test_completed_returns_zero(self):
+        stdout = "12345|COMPLETED|0:0|00:05:00|nid001\n"
+        with patch("prism.dagster.runner.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr="")
+            exit_code, meta = _check_sacct("12345")
+        assert exit_code == 0
+        assert meta["slurm_state"] == "COMPLETED"
+
+    def test_cancelled_returns_nonzero(self):
+        """CANCELLED jobs report 0:0 in sacct but should be treated as failure."""
+        stdout = "12345|CANCELLED|0:0|00:01:00|nid001\n"
+        with patch("prism.dagster.runner.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr="")
+            exit_code, meta = _check_sacct("12345")
+        assert exit_code != 0
+        assert meta["slurm_state"] == "CANCELLED"
+
+    def test_timeout_returns_nonzero(self):
+        stdout = "12345|TIMEOUT|0:0|04:00:00|nid001\n"
+        with patch("prism.dagster.runner.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr="")
+            exit_code, meta = _check_sacct("12345")
+        assert exit_code != 0
+
+    def test_failed_returns_nonzero(self):
+        stdout = "12345|FAILED|1:0|00:02:00|nid001\n"
+        with patch("prism.dagster.runner.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr="")
+            exit_code, meta = _check_sacct("12345")
+        assert exit_code != 0
+
+    def test_running_returns_none(self):
+        stdout = "12345|RUNNING|0:0|00:01:00|nid001\n"
+        with patch("prism.dagster.runner.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=stdout, stderr="")
+            exit_code, meta = _check_sacct("12345")
+        assert exit_code is None
+        assert meta == {}

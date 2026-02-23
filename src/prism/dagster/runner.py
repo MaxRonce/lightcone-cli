@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 import subprocess
 import sys
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -78,12 +78,13 @@ class ASPContainerRunner:
         is unavailable or the container run fails.
         """
         cli_args = _build_cli_args(params or {}, universe_id)
+        full_command = (command + " " + " ".join(cli_args)).strip()
         results_dir = self.project_root / "results" / universe_id
         results_dir.mkdir(parents=True, exist_ok=True)
 
         if self.backend == "slurm":
             return self._run_slurm(
-                command=command,
+                command=full_command,
                 container=container or self.default_container,
                 input_ids=inputs or [],
                 output_id=output_id,
@@ -95,11 +96,10 @@ class ASPContainerRunner:
         effective_container = container or self.default_container
         if effective_container:
             result = self._run_docker(
-                command=command,
+                command=full_command,
                 container=effective_container,
                 universe_id=universe_id,
                 resources=resources or {},
-                cli_args=cli_args,
             )
             if result.exit_code == 0:
                 return result
@@ -112,10 +112,9 @@ class ASPContainerRunner:
             )
 
         return self._run_local(
-            command=command,
+            command=full_command,
             output_id=output_id,
             universe_id=universe_id,
-            cli_args=cli_args,
             warn=effective_container is not None,
         )
 
@@ -125,22 +124,19 @@ class ASPContainerRunner:
         container: str,
         universe_id: str,
         resources: dict[str, Any],
-        cli_args: list[str],
     ) -> ExecutionResult:
         """Execute a recipe in a Docker container.
 
         Mounts the project root at /workspace so scripts can read data and
         write results using their normal relative paths.
         """
-        full_command = command + " " + " ".join(cli_args)
-
         cmd = ["docker", "run", "--rm"]
         cmd.extend(translate_resources_to_docker_flags(resources))
         cmd.extend([
             "-v", f"{self.project_root}:/workspace",
             "-w", "/workspace",
             container,
-            "sh", "-c", full_command,
+            "sh", "-c", command,
         ])
 
         try:
@@ -169,7 +165,6 @@ class ASPContainerRunner:
         command: str,
         output_id: str,
         universe_id: str,
-        cli_args: list[str],
         warn: bool = False,
     ) -> ExecutionResult:
         """Execute a recipe as a local subprocess.
@@ -184,10 +179,9 @@ class ASPContainerRunner:
                 output_id,
             )
 
-        full_command = command + " " + " ".join(cli_args)
-
         # Use the same Python that is running prism, unless the command
         # explicitly names an interpreter.
+        full_command = command
         env_python = sys.executable
         if full_command.startswith("python "):
             full_command = env_python + full_command[len("python"):]
@@ -511,7 +505,7 @@ def _shifter_run_command(command: str, resources: dict[str, Any]) -> str:
 
 def _shell_quote(s: str) -> str:
     """Wrap a string in single quotes for shell, escaping internal quotes."""
-    return "'" + s.replace("'", "'\\''") + "'"
+    return shlex.quote(s)
 
 
 def _parse_sbatch_job_id(stdout: str) -> str | None:
@@ -586,11 +580,15 @@ def _check_sacct(job_id: str) -> tuple[int | None, dict[str, Any]]:
         state = state.strip()
         if state in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL",
                       "OUT_OF_MEMORY", "PREEMPTED"):
-            # Parse exit code — format is "exit:signal" e.g. "0:0"
-            try:
-                exit_code = int(exit_code_str.split(":")[0])
-            except (ValueError, IndexError):
-                exit_code = 1 if state != "COMPLETED" else 0
+            # For non-COMPLETED states always treat as failure — sacct often
+            # reports 0:0 for CANCELLED jobs which would be a false success.
+            if state != "COMPLETED":
+                exit_code = 1
+            else:
+                try:
+                    exit_code = int(exit_code_str.split(":")[0])
+                except (ValueError, IndexError):
+                    exit_code = 0
             return exit_code, {
                 "slurm_state": state,
                 "elapsed": elapsed,
