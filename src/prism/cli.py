@@ -510,11 +510,20 @@ def run(
     else:
         selection = [spec.key.path[-1] for spec in all_assets]
 
+    # Use a persistent DagsterInstance so run history is recorded for the
+    # Dagster webserver (prism dev) to display.
+    dagster_yaml = project_path / "dagster.yaml"
+    if dagster_yaml.exists():
+        instance = dg.DagsterInstance.from_config(str(project_path))
+    else:
+        instance = None
+
     # Execute
     try:
         result = dg.materialize(
             assets=list(defs.assets),
             selection=selection,
+            instance=instance,
         )
         if result.success:
             console.print("[green]✓[/green] Materialization complete")
