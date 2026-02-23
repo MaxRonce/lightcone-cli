@@ -130,6 +130,38 @@ class TestSlurmResourceTranslation:
         assert "--constraint=gpu&hbm80g" in dirs
         assert "--cpus-per-task=4" in dirs
 
+    # -- Default walltime from resource_limits --
+
+    def test_default_walltime_from_resource_limits(self):
+        """When no time_limit and resource_limits has max_walltime_minutes, use it."""
+        dirs = translate_resources_to_slurm_directives(
+            {"cpus": 4},
+            resource_limits={"max_walltime_minutes": 120},
+        )
+        assert "--time=02:00:00" in dirs
+
+    def test_default_walltime_fallback_30(self):
+        """When no time_limit and resource_limits has no max_walltime_minutes, default to 30m."""
+        dirs = translate_resources_to_slurm_directives(
+            {},
+            resource_limits={},
+        )
+        assert "--time=00:30:00" in dirs
+
+    def test_explicit_time_limit_overrides_resource_limits(self):
+        """Explicit time_limit in resources takes precedence over resource_limits default."""
+        dirs = translate_resources_to_slurm_directives(
+            {"time_limit": "4h"},
+            resource_limits={"max_walltime_minutes": 120},
+        )
+        time_directives = [d for d in dirs if d.startswith("--time=")]
+        assert time_directives == ["--time=04:00:00"]
+
+    def test_no_resource_limits_no_default(self):
+        """Backward compat: no resource_limits param means no default walltime injected."""
+        dirs = translate_resources_to_slurm_directives({})
+        assert dirs == []
+
 
 # ---------------------------------------------------------------------------
 # Time limit normalisation
@@ -283,6 +315,37 @@ class TestGenerateSbatchScript:
         )
         assert "#SBATCH --qos=debug" in script
         assert "#SBATCH --constraint=gpu&hbm80g" in script
+
+    def test_default_walltime_in_sbatch_script(self, tmp_path):
+        """generate_sbatch_script passes resource_limits through to directives."""
+        script = generate_sbatch_script(
+            command="python train.py",
+            container=None,
+            container_runtime="podman-hpc",
+            project_root=tmp_path,
+            output_id="test",
+            universe_id="baseline",
+            resources={"cpus": 4},
+            scheduler_config={"account": "m1234"},
+            resource_limits={"max_walltime_minutes": 360},
+        )
+        assert "#SBATCH --time=06:00:00" in script
+
+    def test_sbatch_script_default_walltime_30(self, tmp_path):
+        """generate_sbatch_script uses 30-minute fallback when
+        resource_limits has no max_walltime_minutes."""
+        script = generate_sbatch_script(
+            command="python train.py",
+            container=None,
+            container_runtime="podman-hpc",
+            project_root=tmp_path,
+            output_id="test",
+            universe_id="baseline",
+            resources={},
+            scheduler_config={"account": "m1234"},
+            resource_limits={},
+        )
+        assert "#SBATCH --time=00:30:00" in script
 
 
 # ---------------------------------------------------------------------------
