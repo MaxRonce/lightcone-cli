@@ -25,11 +25,7 @@ Create a new ASP analysis project through conversation. Build the spec iterative
 
 ## Phase 1: Research Question
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM > RESEARCH QUESTION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: RESEARCH QUESTION
 
 > "What are you trying to learn? Describe the question in your own words."
 
@@ -43,11 +39,7 @@ Then sharpen:
 
 ## Phase 2: Analysis Structure
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM > ANALYSIS STRUCTURE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: ANALYSIS STRUCTURE
 
 > "Walk me through how you'd do this step by step. What happens first? What would you want to check before moving on?"
 
@@ -67,11 +59,7 @@ For multi-stage: map what each stage produces (outputs with recipes), what the n
 
 Repeat this phase for each section being scoped (top-level or sub-analysis).
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM > DEEP DIVE -- [SECTION NAME]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: DEEP DIVE — [SECTION NAME]
 
 The Deep Dive is ONE integrated conversation where decision identification and literature search happen together. You are simultaneously:
 - Talking to the user about their approach
@@ -153,11 +141,7 @@ Review the spec with the user. Update asp.yaml with any additions. Check that an
 
 ## Finalize
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM > FINALIZING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: FINALIZING
 
 ### Validate
 
@@ -190,11 +174,7 @@ If edits requested, apply, re-validate, and update CLAUDE.md.
 
 ## Done
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM > SPECIFICATION COMPLETE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: SPECIFICATION COMPLETE ✓
 
 Show summary table:
 
@@ -205,33 +185,13 @@ Show summary table:
 | sub_analysis  | ...       | ...     | ...      |
 ```
 
-Then:
+Then show a Next Up block (see ui-brand.md) with:
 
-```
----------------------------------------------------------------
-
-> Next Up
-
-Start building -- write scripts, run them directly, iterate.
-Write them recipe-ready (parameterized, results to convention paths).
-See CLAUDE.md for conventions.
-
-When scripts work, integrate:
-- Add recipe: blocks to outputs in asp.yaml
-- Check progress: prism status
-- Execute: prism run
-
-Every decision becomes a parameter -- no hardcoded values.
-
-<sub>/clear first -- CLAUDE.md has everything needed to pick back up</sub>
-
----------------------------------------------------------------
-
-Also available:
-- `/prism-verify` -- verify results, decision-code alignment, success criteria
-
----------------------------------------------------------------
-```
+- Start building -- write scripts, run them directly, iterate
+- Write them recipe-ready (parameterized, results to convention paths). See CLAUDE.md for conventions
+- When scripts work, integrate: add `recipe:` blocks to outputs, `prism status`, `prism run`
+- Every decision becomes a parameter -- no hardcoded values
+- Also available: `/prism-verify`
 
 ---
 

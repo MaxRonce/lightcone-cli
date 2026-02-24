@@ -18,6 +18,8 @@ Use for major phase transitions.
 - `DEEP DIVE — [SECTION]`
 - `FINALIZING`
 - `SPECIFICATION COMPLETE ✓`
+- `VERIFY — <universe_id>`
+- `VERIFICATION REPORT — <universe_id>`
 
 ---
 
