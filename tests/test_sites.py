@@ -5,6 +5,7 @@ from prism.dagster.sites import (
     SITE_DEFAULTS,
     detect_site,
     get_site_defaults,
+    get_site_guidance,
     list_known_sites,
 )
 
@@ -22,15 +23,6 @@ class TestDetectSite:
     def test_case_insensitive(self):
         assert detect_site("Perlmutter") == "perlmutter"
         assert detect_site("PERLMUTTER") == "perlmutter"
-
-    def test_cori(self):
-        assert detect_site("cori") == "cori"
-
-    def test_frontier(self):
-        assert detect_site("frontier") == "frontier"
-
-    def test_polaris(self):
-        assert detect_site("polaris") == "polaris"
 
     def test_saul_matches_perlmutter(self):
         """saul is an alias hostname for perlmutter."""
@@ -66,18 +58,19 @@ class TestGetSiteDefaults:
         assert cpu["constraint"] == "cpu"
         assert cpu["container_flags"] == []
 
-    def test_cori_uses_shifter(self):
-        site = get_site_defaults("cori")
-        assert site is not None
-        assert site["scheduler"]["container_runtime"] == "shifter"
-
-    def test_frontier_uses_singularity(self):
-        site = get_site_defaults("frontier")
-        assert site is not None
-        assert site["scheduler"]["container_runtime"] == "singularity"
-
     def test_unknown(self):
         assert get_site_defaults("nonexistent") is None
+
+
+class TestGetSiteGuidance:
+    def test_perlmutter_has_guidance(self):
+        guidance = get_site_guidance("perlmutter")
+        assert guidance is not None
+        assert "Perlmutter" in guidance
+        assert "podman-hpc" in guidance
+
+    def test_unknown(self):
+        assert get_site_guidance("nonexistent") is None
 
 
 class TestListKnownSites:
@@ -85,8 +78,6 @@ class TestListKnownSites:
         sites = list_known_sites()
         keys = [s[0] for s in sites]
         assert "perlmutter" in keys
-        assert "frontier" in keys
-        assert "polaris" in keys
 
     def test_has_display_names(self):
         sites = list_known_sites()

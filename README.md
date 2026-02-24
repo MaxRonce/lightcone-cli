@@ -61,7 +61,6 @@ asp paper add <doi>
 |-------|---------|
 | `/prism` | Reference guide for working with ASP analyses |
 | `/prism-new` | Scope a research question and structure the analysis |
-| `/prism-insights` | Extract insights from papers with evidence verification |
 | `/prism-verify` | Verify implementation matches specification |
 
 ## Architecture
