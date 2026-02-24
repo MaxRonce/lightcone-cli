@@ -13,16 +13,15 @@ Help users work with the Agentic Science Protocol (ASP) via Prism — a declarat
 | Command | Purpose |
 |---------|---------|
 | `/prism-new` | Create a new analysis — scope question, structure decisions, identify sub-analyses with literature |
-| `/prism-run` | Execute recipes — materialize outputs, monitor status, diagnose failures |
-| `/prism-status` | Quick pipeline status check — what's materialized, what's pending |
+| `/prism-verify` | Verify a completed analysis — check results, decision-code alignment, success criteria |
 
 ### Workflow
 
 ```
-/prism-new  →  write & debug  →  integrate recipes  →  /prism-run
+/prism-new  →  write & debug  →  integrate recipes  →  prism run
 ```
 
-`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building progressively.
+`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building progressively. Execute with `prism run` (reads default target from `prism.yaml`).
 
 ## Development Workflow
 

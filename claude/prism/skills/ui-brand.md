@@ -63,8 +63,7 @@ At end of major completions:
 ───────────────────────────────────────────────────────────────
 
 Also available:
-- `/prism-insights` — description
-- Other options
+- Other available skills
 
 ───────────────────────────────────────────────────────────────
 ```
