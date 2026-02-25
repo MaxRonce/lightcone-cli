@@ -60,7 +60,7 @@ inputs:
 decisions:
   scaling:
     label: "Feature Scaling"
-    type: method                 # method | data | parameter
+    tags: [method]               # optional freeform tags for grouping
     rationale: "Affects convergence"
     default: standard
     options:
@@ -80,7 +80,7 @@ container:
 decisions:
   cosmology_model:               # Shared across stages
     label: "Cosmological Model"
-    type: method
+    tags: [method]
     default: flat_lcdm
     options:
       flat_lcdm: { label: "Flat LCDM" }
@@ -96,7 +96,7 @@ analyses:
     decisions:
       noise_model:
         label: "Noise Model"
-        type: method
+        tags: [method]
         default: heteroscedastic
         options:
           homoscedastic: { label: "Homoscedastic" }
@@ -112,7 +112,7 @@ analyses:
 
 ### Decision Parameterization
 
-**Every decision must be parameterized in code** -- never hardcode a decision value. Accept as CLI args regardless of type (`method`, `data`, or `parameter`).
+**Every decision must be parameterized in code** -- never hardcode a decision value. Accept as CLI args regardless of category (method, data, or parameter).
 
 **Underscore convention:** IDs use underscores in `asp.yaml` (`prior_range`). Prism passes `--prior_range wide`. Scripts must match: `parser.add_argument('--prior_range')`, **not** `--prior-range`.
 
