@@ -20,7 +20,7 @@ You are an ASP insight extraction agent with self-validation capability. Your ta
 - DOI: [DOI]
 - Version: [VERSION -- include only for arXiv papers, omit this line otherwise]
 - PDF Path: [PDF_PATH -- absolute path from `asp paper path`]
-- Target decisions: [TARGET_DECISIONS -- list each decision ID, its label, its type, and its options with descriptions]
+- Target decisions: [TARGET_DECISIONS -- list each decision ID, its label, and its options with descriptions]
 
 ## Instructions
 
@@ -115,7 +115,7 @@ When building the subagent prompt from this template:
 
 1. **ANALYSIS_CONTEXT**: Include the analysis `description`, relevant `success_criteria`, and the specific decisions (with full option structure) that this paper might inform.
 
-2. **TARGET_DECISIONS**: List each decision ID, its label, its type, and its options with descriptions. The subagent needs this to know which options to look for evidence supporting or contrasting.
+2. **TARGET_DECISIONS**: List each decision ID, its label, and its options with descriptions. The subagent needs this to know which options to look for evidence supporting or contrasting.
 
 3. **TIMESTAMP**: Use the current time in ISO 8601 format (e.g., `2026-02-24T14:30:00`).
 
