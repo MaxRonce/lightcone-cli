@@ -57,7 +57,7 @@ A simple analysis puts everything at the top level. Complex analyses use `analys
 decisions:
   scaling:
     label: "Feature Scaling"
-    tags: [method]
+    tags: [preprocessing]
     default: standard
     options:
       standard:
@@ -73,7 +73,7 @@ decisions:
 decisions:
   cosmology_model:
     label: "Cosmological Model"
-    tags: [method]
+    tags: [physics]
     default: flat_lcdm
     options:
       flat_lcdm:
@@ -97,7 +97,7 @@ analyses:
     decisions:
       noise_model:
         label: "Noise Model"
-        tags: [method]
+        tags: [simulation]
         default: heteroscedastic
         options:
           homoscedastic:
@@ -122,7 +122,7 @@ analyses:
     decisions:
       architecture:
         label: "Network Architecture"
-        tags: [method]
+        tags: [model_selection]
         default: maf
         options:
           maf:
@@ -434,7 +434,7 @@ Decisions live under `decisions:` at the top level (or within a sub-analysis und
 decisions:
   new_decision:
     label: "Human-readable Label"
-    tags: [method]  # optional: freeform tags for grouping (e.g., method, data, parameter)
+    tags: [preprocessing]  # optional: freeform tags for grouping decisions
     rationale: "Why this decision matters"
     default: option_a
     options:

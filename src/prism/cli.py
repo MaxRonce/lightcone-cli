@@ -196,7 +196,7 @@ outputs:
 decisions:
   example_method:
     label: "Example Method Choice"
-    tags: [method]
+    tags: [analysis]
     rationale: "TODO: Explain why this decision matters"
     default: option_a
     options:
