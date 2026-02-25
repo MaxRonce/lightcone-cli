@@ -154,10 +154,8 @@ __pycache__/
     if target:
         console.print(f"  Default target: [cyan]{target}[/cyan]")
 
-    console.print(f"\n[bold]cd {directory}[/bold], then either:")
-    console.print("  • [cyan]prism run[/cyan] to execute the analysis")
-    console.print("  • [cyan]claude[/cyan] to work from the command line")
-    console.print("\nThen run [cyan]/prism-new[/cyan] to scope your research question.")
+    console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
+    console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
 
 
 def _create_boilerplate_asp_yaml(directory: Path) -> None:
