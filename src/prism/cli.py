@@ -418,6 +418,16 @@ def _create_claude_settings(directory: Path) -> None:
                         },
                     ],
                 },
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": ".claude/scripts/check-prism-run.sh",
+                            "timeout": 15,
+                        },
+                    ],
+                },
             ],
         },
     }
