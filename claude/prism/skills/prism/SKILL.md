@@ -13,15 +13,16 @@ Help users work with the Agentic Science Protocol (ASP) via Prism — a declarat
 | Command | Purpose |
 |---------|---------|
 | `/prism-new` | Create a new analysis — scope question, structure decisions, identify sub-analyses with literature |
+| `/prism-build` | Autonomous build loop — iterate from spec to materialized results |
 | `/prism-verify` | Verify a completed analysis — check results, decision-code alignment, success criteria |
 
 ### Workflow
 
 ```
-/prism-new  →  write & debug  →  integrate recipes  →  prism run
+/prism-new  →  /prism-build  →  /prism-verify
 ```
 
-`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building progressively. Execute with `prism run` (reads default target from `prism.yaml`).
+`/prism-new` scopes the research question, structures decisions, and searches for supporting literature. `/prism-build` autonomously iterates from spec to materialized results (write scripts, integrate recipes, run `prism run`). `/prism-verify` checks the final analysis for correctness.
 
 ## Development Workflow
 
@@ -224,10 +225,18 @@ Define concrete, verifiable conditions for success:
 description: |
   Build a classifier for the Iris dataset...
 success_criteria:
-  - "Achieve >95% classification accuracy on held-out test set"
-  - "Model size under 10MB for mobile deployment"
-  - "Prediction time under 100ms per sample"
+  - claim: "Achieve >95% classification accuracy on held-out test set"
+    output: accuracy
+    condition: "value > 0.95"
+  - claim: "Model size under 10MB for mobile deployment"
+    output: model_size
+    condition: "value < 10"
+  - claim: "Prediction time under 100ms per sample"
+    output: inference_time
+    condition: "value < 0.1"
 ```
+
+Structured objects linking claims to outputs for automated verification.
 
 ### Universes
 A universe is a complete set of decisions — one option per decision point. For simple analyses, decisions are at the top level. For analyses with sub-analyses, decisions are nested under `analyses:`:

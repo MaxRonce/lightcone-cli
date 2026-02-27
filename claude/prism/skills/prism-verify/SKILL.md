@@ -92,9 +92,9 @@ Be pragmatic — the code may parse option IDs into internal representations (e.
 **Skip if the user opted out during Setup.**
 
 For each success criterion in `asp.yaml`:
-1. If a metric can directly verify it (e.g., "accuracy > 95%" → check `accuracy.json`), do so
-2. If verification requires qualitative judgment, note as "needs manual review"
-3. If no results relate to it, flag as unverifiable
+1. If the criterion has `output` and `condition` fields, read the referenced output's result file and evaluate the condition. Report pass/fail.
+2. If the criterion has only a `claim` (no `output` reference), use judgment: check if any result can verify it. Note "needs manual review" for qualitative criteria.
+3. If no results relate to it, flag as unverifiable.
 
 ---
 
