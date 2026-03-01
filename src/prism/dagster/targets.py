@@ -45,6 +45,38 @@ def save_target(name: str, config: dict[str, Any]) -> Path:
     return config_path
 
 
+def get_sites_dir() -> Path:
+    """Return the user-level sites directory (~/.prism/sites/)."""
+    return Path.home() / ".prism" / "sites"
+
+
+def list_sites() -> list[str]:
+    """Return names of saved site configurations."""
+    sites_dir = get_sites_dir()
+    if not sites_dir.exists():
+        return []
+    return sorted(p.stem for p in sites_dir.glob("*.yaml"))
+
+
+def load_site(name: str) -> dict[str, Any] | None:
+    """Load a saved site configuration by name. Returns None if missing."""
+    config_path = get_sites_dir() / f"{name}.yaml"
+    if not config_path.exists():
+        return None
+    with open(config_path) as f:
+        return yaml.safe_load(f)
+
+
+def save_site(name: str, config: dict[str, Any]) -> Path:
+    """Save a site configuration to ~/.prism/sites/{name}.yaml."""
+    sites_dir = get_sites_dir()
+    sites_dir.mkdir(parents=True, exist_ok=True)
+    config_path = sites_dir / f"{name}.yaml"
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    return config_path
+
+
 def get_config_path() -> Path:
     """Return the user-level config file path (~/.prism/config.yaml)."""
     return Path.home() / ".prism" / "config.yaml"

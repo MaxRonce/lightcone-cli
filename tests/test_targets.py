@@ -1,4 +1,4 @@
-"""Tests for Dagster target configuration."""
+"""Tests for site and user configuration."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,79 +7,78 @@ import pytest
 
 from prism.dagster.targets import (
     get_config_path,
-    list_targets,
-    load_target,
+    get_sites_dir,
+    list_sites,
+    load_site,
     load_user_config,
-    save_target,
+    save_site,
     save_user_config,
 )
 
 
 @pytest.fixture
-def targets_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    targets = tmp_path / "targets"
-    targets.mkdir()
-    monkeypatch.setattr("prism.dagster.targets.get_targets_dir", lambda: targets)
-    return targets
+def sites_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    sites = tmp_path / "sites"
+    sites.mkdir()
+    monkeypatch.setattr("prism.dagster.targets.get_sites_dir", lambda: sites)
+    return sites
 
 
 @pytest.fixture
-def sample_target() -> dict:
+def sample_site() -> dict:
     return {
-        "name": "perlmutter",
+        "site": "perlmutter",
         "backend": "slurm",
         "connection": {
             "hostname": "perlmutter.nersc.gov",
             "username": "testuser",
         },
-        "scheduler": {
-            "account": "m1234",
-            "partition": "gpu",
-            "container_runtime": "shifter",
-        },
-        "resource_limits": {
-            "max_nodes": 4,
-            "max_walltime_minutes": 240,
-            "max_concurrent_jobs": 8,
-            "max_node_hours_per_session": 32,
+        "account": "m1234",
+        "container_runtime": "podman-hpc",
+        "defaults": {
+            "node_type": "gpu",
+            "constraint": "gpu",
+            "qos": "debug",
+            "nodes": 1,
+            "time_limit": "30m",
         },
     }
 
 
-class TestTargetConfig:
-    def test_save_then_load(self, targets_dir, sample_target):
-        save_target("perlmutter", sample_target)
-        loaded = load_target("perlmutter")
+class TestSiteConfig:
+    def test_save_then_load(self, sites_dir, sample_site):
+        save_site("perlmutter", sample_site)
+        loaded = load_site("perlmutter")
         assert loaded is not None
         assert loaded["backend"] == "slurm"
         assert loaded["connection"]["hostname"] == "perlmutter.nersc.gov"
 
-    def test_load_nonexistent(self, targets_dir):
-        assert load_target("nonexistent") is None
+    def test_load_nonexistent(self, sites_dir):
+        assert load_site("nonexistent") is None
 
-    def test_list_empty(self, targets_dir):
-        assert list_targets() == []
+    def test_list_empty(self, sites_dir):
+        assert list_sites() == []
 
-    def test_list_with_targets(self, targets_dir, sample_target):
-        save_target("perlmutter", sample_target)
-        save_target("other", {"name": "other", "backend": "slurm"})
-        assert list_targets() == ["other", "perlmutter"]
+    def test_list_with_sites(self, sites_dir, sample_site):
+        save_site("perlmutter", sample_site)
+        save_site("frontier", {"site": "frontier", "backend": "slurm"})
+        assert list_sites() == ["frontier", "perlmutter"]
 
 
 class TestUserConfig:
-    def test_load_missing_returns_empty(self, targets_dir, monkeypatch):
-        config_path = targets_dir.parent / "config.yaml"
+    def test_load_missing_returns_empty(self, sites_dir, monkeypatch):
+        config_path = sites_dir.parent / "config.yaml"
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
         assert load_user_config() == {}
 
-    def test_save_and_load_default_target(self, targets_dir, monkeypatch):
-        config_path = targets_dir.parent / "config.yaml"
+    def test_save_and_load_default_site(self, sites_dir, monkeypatch):
+        config_path = sites_dir.parent / "config.yaml"
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
-        save_user_config({"default_target": "perlmutter"})
+        save_user_config({"default_site": "perlmutter"})
         config = load_user_config()
-        assert config["default_target"] == "perlmutter"
+        assert config["default_site"] == "perlmutter"
 
     def test_config_path_is_in_prism_dir(self):
         path = get_config_path()
