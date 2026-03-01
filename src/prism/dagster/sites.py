@@ -75,6 +75,8 @@ def detect_site(hostname_or_name: str) -> str | None:
     """
     normalized = hostname_or_name.lower()
     for site_key, site in SITE_DEFAULTS.items():
+        if site.get("backend") == "local":
+            continue
         if site_key in normalized:
             return site_key
         for pattern in site.get("hostname_patterns", []):

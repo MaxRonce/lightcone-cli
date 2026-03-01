@@ -7,7 +7,6 @@ import pytest
 
 from prism.dagster.targets import (
     get_config_path,
-    get_sites_dir,
     list_sites,
     load_site,
     load_user_config,

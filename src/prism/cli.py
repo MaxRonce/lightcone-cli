@@ -137,7 +137,7 @@ __pycache__/
     _create_boilerplate_asp_yaml(directory)
 
     # Create CLAUDE.md with project conventions
-    _create_claude_md(directory, target=site)
+    _create_claude_md(directory)
 
     # Create Claude Code settings with local skills
     _create_claude_settings(directory)
@@ -292,7 +292,7 @@ See [Prism documentation](https://github.com/LightconeResearch/Prism) for the ag
     (directory / "README.md").write_text(readme)
 
 
-def _create_claude_md(directory: Path, target: str | None = None) -> None:
+def _create_claude_md(directory: Path) -> None:
     """Create CLAUDE.md from the template in the plugin source."""
     name = directory.name if directory != Path(".") else "My Analysis"
 
@@ -894,7 +894,7 @@ def profiles(ctx: click.Context) -> None:
         nodes = prof.get("nodes", "—")
         time_limit = prof.get("time_limit", "—")
         click.echo(f"  {name:<14}{site:<14}{qos:<10}{str(nodes):<7}{time_limit}")
-    click.echo(f"\n  Use: prism run --profile <name>\n")
+    click.echo("\n  Use: prism run --profile <name>\n")
 
 
 @profiles.command()
@@ -941,9 +941,13 @@ def add(name: str) -> None:
         qos_list = list(qos_options.items())
         for i, (qos_key, qos_info) in enumerate(qos_list, 1):
             click.echo(f"    {i}. {qos_key} — {qos_info['description']}")
-        choice = click.prompt("  Select QOS", default="1")
-        idx = int(choice) - 1
-        profile["qos"] = qos_list[idx][0]
+        qos_choices = [str(i) for i in range(1, len(qos_list) + 1)]
+        choice = click.prompt(
+            "  Select QOS",
+            type=click.Choice(qos_choices),
+            default="1",
+        )
+        profile["qos"] = qos_list[int(choice) - 1][0]
     else:
         qos = click.prompt("  QOS", default="")
         if qos:
@@ -1146,7 +1150,10 @@ def _run_setup_wizard(name: str | None = None) -> Path:
 @click.option("--list", "list_flag", is_flag=True, help="List configured sites")
 @click.option("--show", "show_name", default=None, help="Show a site's config")
 @click.option("--default", "set_default", default=None, help="Set default site")
-def setup(name: str | None, list_flag: bool, show_name: str | None, set_default: str | None) -> None:
+def setup(
+    name: str | None, list_flag: bool,
+    show_name: str | None, set_default: str | None,
+) -> None:
     """Set up or manage site configurations.
 
     Configures connection details, node type, QOS, container runtime,

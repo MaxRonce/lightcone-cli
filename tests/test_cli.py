@@ -251,6 +251,44 @@ class TestSetupCommand:
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
         assert config["default_site"] == "mypm"
 
+    def test_setup_default_local(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        """Test --default local works without a site config file."""
+        monkeypatch.setattr("prism.dagster.targets.get_config_path",
+                            lambda: tmp_path / "config.yaml")
+        result = runner.invoke(main, ["setup", "--default", "local"])
+        assert result.exit_code == 0
+
+        import yaml
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        assert config["default_site"] == "local"
+
+    def test_setup_default_existing_site(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
+        """Test --default works with a configured site."""
+        sites_dir = tmp_path / "sites"
+        sites_dir.mkdir()
+        (sites_dir / "perlmutter.yaml").write_text("site: perlmutter\n")
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: sites_dir)
+        monkeypatch.setattr("prism.dagster.targets.get_config_path",
+                            lambda: tmp_path / "config.yaml")
+        result = runner.invoke(main, ["setup", "--default", "perlmutter"])
+        assert result.exit_code == 0
+
+        import yaml
+        config = yaml.safe_load((tmp_path / "config.yaml").read_text())
+        assert config["default_site"] == "perlmutter"
+
+    def test_setup_default_nonexistent(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
+        """Test --default fails for a non-existent site."""
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: tmp_path / "sites")
+        result = runner.invoke(main, ["setup", "--default", "nonexistent"])
+        assert result.exit_code == 1
+
 
 class TestAutoTrigger:
     """Tests for the auto-trigger setup check."""
@@ -314,7 +352,10 @@ class TestProfilesCommand:
         (tmp_path / "prism.yaml").write_text(yaml.dump({
             "profiles": {
                 "default": {"site": "perlmutter"},
-                "production": {"site": "perlmutter", "qos": "regular", "nodes": 8, "time_limit": "6h"},
+                "production": {
+                    "site": "perlmutter", "qos": "regular",
+                    "nodes": 8, "time_limit": "6h",
+                },
             }
         }, sort_keys=False))
         (tmp_path / "asp.yaml").write_text(yaml.dump({"name": "my-analysis"}, sort_keys=False))
