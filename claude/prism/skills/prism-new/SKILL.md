@@ -10,11 +10,9 @@ Create a new ASP analysis project through conversation. Build the spec iterative
 
 ## References
 
-- [Prism Reference](../../../CLAUDE.md) -- core concepts, CLI, validation
 - [Decision Guide](./decision-guide.md) -- decision identification, E/N/U classification, blind-spot checklist
 - [Literature Extraction](./literature-extraction.md) -- subagent prompt template for paper processing
 - [UI Brand](./../ui-brand.md) -- visual formatting patterns
-- [CLAUDE.md Template](./../../templates/CLAUDE.md) -- asp.yaml structure, insights format, CLI
 
 ## Setup
 

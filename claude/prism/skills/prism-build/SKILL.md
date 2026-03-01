@@ -12,7 +12,6 @@ You are inside a loop. `CLAUDE.md` is your spec -- it's in the system prompt abo
 
 ## References
 
-- [Prism Reference](../../../CLAUDE.md) -- core concepts, CLI, validation
 - [Prism Verify](./../prism-verify/SKILL.md) -- verification checks
 
 ## Loop

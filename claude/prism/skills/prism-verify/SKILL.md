@@ -10,7 +10,6 @@ Verify a completed ASP analysis. Checks that implementation matches specificatio
 
 ## References
 
-- [Prism Reference](../../../CLAUDE.md) — core concepts, CLI, validation
 - [UI Brand](./../ui-brand.md) — visual formatting patterns
 
 ## Setup
