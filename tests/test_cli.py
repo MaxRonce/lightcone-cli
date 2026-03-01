@@ -386,7 +386,7 @@ class TestProfilesCommand:
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(main, ["profiles"])
         assert result.exit_code == 0
-        assert "no prism.yaml" in result.output.lower() or "No prism.yaml" in result.output
+        assert "no compute profiles" in result.output.lower()
 
     def test_profiles_lists_profiles(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         monkeypatch.chdir(tmp_path)

@@ -1008,17 +1008,16 @@ def profiles(ctx: click.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
 
-    project_path = Path.cwd()
-    prism_yaml = project_path / "prism.yaml"
-    if not prism_yaml.exists():
-        click.echo("No prism.yaml found. Run 'prism init' first.")
-        return
-
     from prism.dagster.profiles import load_profiles
 
+    project_path = Path.cwd()
     profile_data = load_profiles(project_path)
     if not profile_data:
-        click.echo("No profiles defined in prism.yaml.")
+        console.print("\n  No compute profiles configured yet.")
+        console.print(
+            "  Run [cyan]prism profiles add <name>[/cyan] "
+            "to create one.\n"
+        )
         return
 
     # Get project name from asp.yaml
