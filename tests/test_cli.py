@@ -329,6 +329,41 @@ class TestProfilesCommand:
         assert result.exit_code == 0
 
 
+class TestProfilesAddCommand:
+    """Tests for the prism profiles add command."""
+
+    def test_profiles_add_creates_profile(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        import yaml
+        (tmp_path / "prism.yaml").write_text(yaml.dump({
+            "profiles": {"default": {"site": "perlmutter"}}
+        }, sort_keys=False))
+
+        site_config = {
+            "site": "perlmutter",
+            "backend": "slurm",
+            "defaults": {"qos": "debug", "nodes": 1, "time_limit": "30m"},
+        }
+        with patch("prism.dagster.targets.load_site", return_value=site_config):
+            # Input: site=perlmutter(accept default), qos=1(regular), nodes=8, time_limit=6h
+            result = runner.invoke(
+                main,
+                ["profiles", "add", "production"],
+                input="\n1\n8\n6h\n",
+            )
+        assert result.exit_code == 0
+        assert "Added profile" in result.output
+
+        config = yaml.safe_load((tmp_path / "prism.yaml").read_text())
+        assert "production" in config["profiles"]
+        assert config["profiles"]["production"]["nodes"] == 8
+
+    def test_profiles_add_no_prism_yaml(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(main, ["profiles", "add", "prod"])
+        assert result.exit_code != 0 or "No prism.yaml" in result.output
+
+
 class TestRemoteCommandRemoved:
     """Verify that the old remote commands are gone."""
 

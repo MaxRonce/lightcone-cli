@@ -897,6 +897,80 @@ def profiles(ctx: click.Context) -> None:
     click.echo(f"\n  Use: prism run --profile <name>\n")
 
 
+@profiles.command()
+@click.argument("name")
+def add(name: str) -> None:
+    """Add a compute profile to this project."""
+    from prism.dagster.sites import get_site_defaults
+    from prism.dagster.targets import load_site, load_user_config
+
+    project_path = Path.cwd()
+    prism_yaml = project_path / "prism.yaml"
+    if not prism_yaml.exists():
+        click.echo("No prism.yaml found. Run 'prism init' first.")
+        raise SystemExit(1)
+
+    with open(prism_yaml) as f:
+        data = yaml.safe_load(f) or {}
+
+    profiles_data = data.setdefault("profiles", {})
+
+    # Determine default site from existing profiles or user config
+    existing_site = None
+    if "default" in profiles_data:
+        existing_site = profiles_data["default"].get("site")
+    if not existing_site:
+        user_config = load_user_config()
+        existing_site = user_config.get("default_site", "local")
+
+    site_name = click.prompt("  Site", default=existing_site)
+
+    profile: dict[str, Any] = {"site": site_name}
+
+    # Load site info for QOS options
+    site_config = load_site(site_name)
+    site_defaults = get_site_defaults(site_name)
+
+    # QOS selection
+    qos_options = {}
+    if site_defaults and site_defaults.get("qos_options"):
+        qos_options = site_defaults["qos_options"]
+
+    if qos_options:
+        click.echo("  QOS:")
+        qos_list = list(qos_options.items())
+        for i, (qos_key, qos_info) in enumerate(qos_list, 1):
+            click.echo(f"    {i}. {qos_key} — {qos_info['description']}")
+        choice = click.prompt("  Select QOS", default="1")
+        idx = int(choice) - 1
+        profile["qos"] = qos_list[idx][0]
+    else:
+        qos = click.prompt("  QOS", default="")
+        if qos:
+            profile["qos"] = qos
+
+    # Nodes
+    default_nodes = 1
+    if site_config and "defaults" in site_config:
+        default_nodes = site_config["defaults"].get("nodes", 1)
+    nodes = click.prompt("  Nodes", default=default_nodes, type=int)
+    profile["nodes"] = nodes
+
+    # Time limit
+    default_time = "30m"
+    if site_config and "defaults" in site_config:
+        default_time = str(site_config["defaults"].get("time_limit", "30m"))
+    time_limit = click.prompt("  Time limit", default=default_time)
+    profile["time_limit"] = time_limit
+
+    # Save
+    profiles_data[name] = profile
+    with open(prism_yaml, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    click.echo(f"\n  Added profile '{name}' to prism.yaml")
+
+
 # =============================================================================
 # Setup command
 # =============================================================================
