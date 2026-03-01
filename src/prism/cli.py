@@ -384,28 +384,27 @@ def _prompt_permission_tier() -> str:
     """Interactively prompt the user to choose a permission tier.
 
     Returns one of: 'yolo', 'recommended', 'minimal'.
-    Optionally saves the choice as the default for future projects.
+    Saves the choice as the default for future projects.
     """
     console.print("\n[bold]Claude Code permission level[/bold]")
-    console.print("Controls what Claude can do without asking.\n")
-    console.print("  1) yolo — Everything auto-allowed. No prompts.")
-    console.print("  2) recommended — Prism workflow auto-allowed. Prompts for the rest.")
-    console.print("  3) minimal — Only file reading. Everything else prompts.\n")
+    console.print("  Controls what Claude can do without asking.\n")
+    console.print("    1. yolo — Everything auto-allowed. No prompts.")
+    console.print("    2. recommended — Prism workflow auto-allowed. Prompts for the rest.")
+    console.print("    3. minimal — Only file reading. Everything else prompts.")
 
     choice_map = {"1": "yolo", "2": "recommended", "3": "minimal"}
-    raw = click.prompt("Choose [1/2/3]", default="2").strip()
+    raw = click.prompt(
+        "\n  Select permission level",
+        type=click.Choice(["1", "2", "3"]),
+        default="2",
+    )
     tier = choice_map.get(raw, "recommended")
 
-    save = click.confirm(
-        f"Save '{tier}' as your default for future projects?",
-        default=True,
-    )
-    if save:
-        from prism.dagster.targets import get_config_path, load_user_config, save_user_config
-        global_config = load_user_config()
-        global_config["default_permission_tier"] = tier
-        save_user_config(global_config)
-        console.print(f"  Saved to {get_config_path()}")
+    from prism.dagster.targets import load_user_config, save_user_config
+    global_config = load_user_config()
+    global_config["default_permission_tier"] = tier
+    save_user_config(global_config)
+    console.print(f"  [green]✓[/green] Permissions: {tier}")
 
     return tier
 
@@ -1150,106 +1149,84 @@ def _run_setup_wizard(name: str | None = None) -> Path:
 
     if not configure_hpc:
         site_name = name or "local"
-        config: dict[str, Any] = {
+        site_config: dict[str, Any] = {
             "site": "local",
             "backend": "local",
             "connection": {},
             "defaults": {},
         }
-        path = save_site(site_name, config)
-        console.print(
-            "\n  [green]✓[/green] Default site: local"
-        )
-        user_config = load_user_config()
-        user_config["default_site"] = site_name
-        save_user_config(user_config)
-        return path
+    else:
+        # --- HPC site selection ---
+        known = list_known_sites()
+        hpc_sites = [(k, d) for k, d in known if k != "local"]
+        console.print("\n  [bold]Known HPC sites:[/bold]")
+        for i, (_key, display) in enumerate(hpc_sites, 1):
+            console.print(f"    {i}. {display}")
 
-    # --- HPC site selection ---
-    known = list_known_sites()
-    hpc_sites = [(k, d) for k, d in known if k != "local"]
-    console.print("\n  [bold]Known HPC sites:[/bold]")
-    for i, (_key, display) in enumerate(hpc_sites, 1):
-        console.print(f"    {i}. {display}")
-
-    site_choices = [str(i) for i in range(1, len(hpc_sites) + 1)]
-    site_idx = click.prompt(
-        "\n  Select site",
-        type=click.Choice(site_choices),
-        default="1",
-    )
-    site_key = hpc_sites[int(site_idx) - 1][0]
-    site = get_site_defaults(site_key) or {}
-
-    display = site.get("display_name", site_key)
-    hostname = site.get("connection", {}).get("hostname", "")
-    console.print(
-        f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
-    )
-
-    # --- Connection ---
-    username = click.prompt(
-        "  Username",
-        default=os.environ.get("USER", ""),
-    )
-    account = click.prompt("  Account/allocation")
-
-    # --- Container runtime ---
-    site_runtimes = site.get("container_runtimes", [])
-    if len(site_runtimes) > 1:
-        console.print("\n  [bold]Container runtime:[/bold]")
-        for i, rt in enumerate(site_runtimes, 1):
-            console.print(f"    {i}. {rt}")
-
-        rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
-        rt_idx = click.prompt(
-            "  Select runtime",
-            type=click.Choice(rt_choices),
+        site_choices = [str(i) for i in range(1, len(hpc_sites) + 1)]
+        site_idx = click.prompt(
+            "\n  Select site",
+            type=click.Choice(site_choices),
             default="1",
         )
-        container_runtime = site_runtimes[int(rt_idx) - 1]
-    elif site_runtimes:
-        container_runtime = site_runtimes[0]
-    else:
-        container_runtime = site.get(
-            "scheduler", {},
-        ).get("container_runtime", "docker")
+        site_key = hpc_sites[int(site_idx) - 1][0]
+        site = get_site_defaults(site_key) or {}
 
-    # --- Site name ---
-    default_name = name or site_key or "default"
-    site_name = click.prompt("\n  Site name", default=default_name)
+        display = site.get("display_name", site_key)
+        hostname = site.get("connection", {}).get("hostname", "")
+        console.print(
+            f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
+        )
 
-    # --- Build and save config ---
-    safe = site.get("safe_defaults", {})
-    config = {
-        "site": site_key,
-        "backend": site.get("backend", "slurm"),
-        "connection": {
-            "hostname": site.get("connection", {}).get("hostname", ""),
-            "username": username,
-        },
-        "account": account,
-        "container_runtime": container_runtime,
-        "defaults": safe,
-    }
+        # --- Connection ---
+        username = click.prompt(
+            "  Username",
+            default=os.environ.get("USER", ""),
+        )
+        account = click.prompt("  Account/allocation")
 
-    path = save_site(site_name, config)
-    console.print(f"\n  [green]✓[/green] Saved site: [cyan]{path}[/cyan]")
+        # --- Container runtime ---
+        site_runtimes = site.get("container_runtimes", [])
+        if len(site_runtimes) > 1:
+            console.print("\n  [bold]Container runtime:[/bold]")
+            for i, rt in enumerate(site_runtimes, 1):
+                console.print(f"    {i}. {rt}")
 
-    # Set as default (merge, don't overwrite existing keys like permission tier)
+            rt_choices = [
+                str(i) for i in range(1, len(site_runtimes) + 1)
+            ]
+            rt_idx = click.prompt(
+                "  Select runtime",
+                type=click.Choice(rt_choices),
+                default="1",
+            )
+            container_runtime = site_runtimes[int(rt_idx) - 1]
+        elif site_runtimes:
+            container_runtime = site_runtimes[0]
+        else:
+            container_runtime = site.get(
+                "scheduler", {},
+            ).get("container_runtime", "docker")
+
+        site_name = name or site_key or "default"
+        site_config = {
+            "site": site_key,
+            "backend": site.get("backend", "slurm"),
+            "connection": {
+                "hostname": hostname,
+                "username": username,
+            },
+            "account": account,
+            "container_runtime": container_runtime,
+            "defaults": site.get("safe_defaults", {}),
+        }
+
+    # --- Save site and set as default ---
+    path = save_site(site_name, site_config)
     user_config = load_user_config()
     user_config["default_site"] = site_name
     save_user_config(user_config)
-    console.print(
-        "  [green]✓[/green] Set as default site in "
-        "[cyan]~/.prism/config.yaml[/cyan]"
-    )
-    console.print(
-        "\n  To create compute profiles, add to [cyan]prism.yaml[/cyan]:"
-    )
-    console.print("    [dim]profiles:[/dim]")
-    console.print("    [dim]  default:[/dim]")
-    console.print(f"    [dim]    site: {site_name}[/dim]\n")
+    console.print(f"\n  [green]✓[/green] Default site: {site_name}")
 
     return path
 

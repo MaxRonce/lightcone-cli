@@ -230,11 +230,11 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # runtime=1(podman-hpc), site_name=perlmutter
-        input_lines = "y\n1\ntestuser\nm1234\n1\nperlmutter\n"
+        # runtime=1(podman-hpc)
+        input_lines = "y\n1\ntestuser\nm1234\n1\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
-        assert "Saved site" in result.output
+        assert "Default site: perlmutter" in result.output
         assert (sites_dir / "perlmutter.yaml").exists()
         assert (tmp_path / "config.yaml").exists()
 
@@ -280,14 +280,14 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # runtime=1, site_name=mypm
-        input_lines = "y\n1\ntestuser\nm1234\n1\nmypm\n"
+        # runtime=1
+        input_lines = "y\n1\ntestuser\nm1234\n1\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 
         import yaml
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
-        assert config["default_site"] == "mypm"
+        assert config["default_site"] == "perlmutter"
 
     def test_setup_default_local(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         """Test --default local works without a site config file."""
