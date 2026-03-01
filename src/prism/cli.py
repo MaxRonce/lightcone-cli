@@ -13,7 +13,6 @@ from typing import Any
 import click
 import yaml
 from rich.console import Console
-from rich.panel import Panel
 
 console = Console()
 
@@ -57,7 +56,7 @@ def main() -> None:
 @click.argument("directory", type=click.Path(path_type=Path), default=".")
 @click.option("--no-git", is_flag=True, help="Don't initialize git repository")
 @click.option("--no-venv", is_flag=True, help="Don't create Python virtual environment")
-@click.option("--target", "-t", help="HPC/remote target (e.g., perlmutter)")
+@click.option("--target", "-t", default=None, help="Default execution target (e.g., perlmutter)")
 def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> None:
     """Create a new ASP analysis project with full agentic scaffolding.
 
@@ -68,15 +67,9 @@ def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> No
 
     Examples:
         prism init my-analysis
-        prism init my-analysis --no-git
-        prism init my-analysis --no-venv
         prism init my-analysis --target perlmutter
+        prism init my-analysis --no-git --no-venv
     """
-    # Resolve target configuration if specified
-    target_config: dict[str, Any] | None = None
-    if target is not None:
-        target_config = _resolve_target_config(target)
-
     # Check if this is already an ASP project
     if (directory / "asp.yaml").exists():
         console.print(
@@ -104,19 +97,27 @@ def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> No
     for subdir in subdirs:
         (directory / subdir).mkdir(parents=True, exist_ok=True)
 
+    # Create dagster.yaml for Dagster instance configuration
+    dagster_yaml_content = {
+        "storage": {
+            "sqlite": {
+                "base_dir": "results/.dagster",
+            },
+        },
+    }
+    (directory / "dagster.yaml").write_text(
+        yaml.dump(dagster_yaml_content, default_flow_style=False, sort_keys=False)
+    )
+
     # Create .gitignore
     gitignore = """# ASP Analysis
 results/
+results/.dagster/
 __pycache__/
 *.py[cod]
 .venv/
 .ipynb_checkpoints/
 .DS_Store
-"""
-    if target_config is not None:
-        gitignore += """\n# HPC (user-specific)
-.claude/hpc.yaml
-.claude/.hpc-session-usage
 """
     (directory / ".gitignore").write_text(gitignore)
 
@@ -124,14 +125,23 @@ __pycache__/
     _create_boilerplate_asp_yaml(directory)
 
     # Create CLAUDE.md with project conventions
-    _create_claude_md(directory, target_config=target_config, target_name=target)
+    _create_claude_md(directory, target=target)
 
     # Create Claude Code settings with local skills
-    _create_claude_settings(directory, target_config=target_config)
+    _create_claude_settings(directory)
 
-    # Create project-level HPC config if target specified
-    if target_config is not None:
-        _create_project_hpc_config(directory, target_config)
+    # Write prism.yaml project config and ensure target is configured
+    if target:
+        _create_prism_config(directory, target)
+
+        # Ensure the target has been set up (has a config in ~/.prism/targets/)
+        from prism.dagster.targets import load_target
+
+        if load_target(target) is None:
+            console.print(
+                f"\n[yellow]Target [cyan]{target}[/cyan] is not configured yet.[/yellow]"
+            )
+            _run_target_setup_wizard(target)
 
     # Create virtual environment
     _create_venv(directory, no_venv)
@@ -141,19 +151,15 @@ __pycache__/
 
     # Print success message
     console.print(f"[green]✓[/green] Created ASP analysis project: [cyan]{directory}[/cyan]")
-    if target_config is not None:
-        display = target_config.get("target", {}).get("display_name", target)
-        console.print(f"[green]✓[/green] Configured HPC target: [cyan]{display}[/cyan]")
+    if target:
+        console.print(f"  Default target: [cyan]{target}[/cyan]")
 
-    console.print(f"\n[bold]cd {directory}[/bold], then either:")
-    console.print("  • [cyan]prism canvas[/cyan] to open the visual canvas")
-    console.print("  • [cyan]claude[/cyan] to work from the command line")
-    console.print("\nThen run [cyan]/prism-new[/cyan] to scope your research question.")
+    console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
+    console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
 
 
 def _create_boilerplate_asp_yaml(directory: Path) -> None:
     """Create boilerplate asp.yaml with TODOs."""
-    from asp.helpers import save_yaml
 
     name = directory.name if directory != Path(".") else "My Analysis"
 
@@ -161,45 +167,67 @@ def _create_boilerplate_asp_yaml(directory: Path) -> None:
 # Documentation: https://github.com/LightconeResearch/ASP
 
 version: "1.0"
+name: "{name}"
+description: |
+  TODO: What research question are you trying to answer?
 
-analysis:
-  name: "{name}"
-  problem: |
-    TODO: What research question are you trying to answer?
+container:
+  build: Containerfile
 
-  inputs:
-    - id: primary_data
-      type: data
-      description: "TODO: Describe your primary data source"
+inputs:
+  - id: primary_data
+    type: data
+    description: "TODO: Describe your primary data source"
 
-  outputs:
-    - id: main_result
-      type: metric
-      dtype: float
-      description: "TODO: Describe your primary output metric"
+outputs:
+  - id: main_result
+    type: metric
+    description: "TODO: Describe your primary output metric"
+    recipe:
+      command: python scripts/compute.py
 
-    - id: conclusion
-      type: report
-      description: "Summary addressing the problem statement"
+  - id: conclusion
+    type: report
+    description: "Summary addressing the problem statement"
+    recipe:
+      command: python scripts/summarize.py
+      inputs: [main_result]
 
-chunks:
-  main:
-    decisions:
-      example_method:
-        label: "Example Method Choice"
-        type: method
-        importance: 3
-        rationale: "TODO: Explain why this decision matters"
-        default: option_a
-        options:
-          option_a:
-            label: "Option A"
-            description: "TODO: Describe option A"
-          option_b:
-            label: "Option B"
-            description: "TODO: Describe option B"
+decisions:
+  example_method:
+    label: "Example Method Choice"
+    tags: [analysis]
+    rationale: "TODO: Explain why this decision matters"
+    default: option_a
+    options:
+      option_a:
+        label: "Option A"
+        description: "TODO: Describe option A"
+      option_b:
+        label: "Option B"
+        description: "TODO: Describe option B"
 """
     (directory / "asp.yaml").write_text(asp_yaml)
+
+    # Create Containerfile
+    containerfile = """\
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+"""
+    (directory / "Containerfile").write_text(containerfile)
+
+    # Create requirements.txt
+    requirements = """\
+numpy
+pandas
+"""
+    (directory / "requirements.txt").write_text(requirements)
 
     # Create baseline universe
     baseline_universe = """# Baseline Universe
@@ -208,9 +236,8 @@ chunks:
 id: baseline
 description: "Default configuration using standard practices"
 
-chunks:
-  main:
-    example_method: option_a
+decisions:
+  example_method: option_a
 """
     (directory / "universes" / "baseline.yaml").write_text(baseline_universe)
 
@@ -239,6 +266,7 @@ claude
 ## Structure
 
 - `asp.yaml` — Analysis specification (source of truth)
+- `prism.yaml` — Prism config (default target, etc.)
 - `CLAUDE.md` — Build conventions and project context for Claude Code
 - `universes/` — Decision selections (one YAML per universe)
 - `scripts/` — Implementation scripts
@@ -252,11 +280,7 @@ See [Prism documentation](https://github.com/LightconeResearch/Prism) for the ag
     (directory / "README.md").write_text(readme)
 
 
-def _create_claude_md(
-    directory: Path,
-    target_config: dict[str, Any] | None = None,
-    target_name: str | None = None,
-) -> None:
+def _create_claude_md(directory: Path, target: str | None = None) -> None:
     """Create CLAUDE.md from the template in the plugin source."""
     name = directory.name if directory != Path(".") else "My Analysis"
 
@@ -279,23 +303,27 @@ def _create_claude_md(
             "_Run `/prism-new` to scope the research question and populate this section._\n"
         )
 
-    # Insert compute notes before Analysis Details section
-    if target_config is not None:
-        notes = target_config.get("notes")
-        if notes:
-            notes_section = f"### Compute Notes\n\n{notes.strip()}\n\n"
-            marker = "<!-- AUTOGENERATED: /prism-new populates below during specification -->"
-            if marker in content:
-                content = content.replace(marker, notes_section + marker)
-            else:
-                content += "\n" + notes_section
-
     (directory / "CLAUDE.md").write_text(content)
 
 
-def _create_claude_settings(
-    directory: Path, target_config: dict[str, Any] | None = None
-) -> None:
+def _create_prism_config(directory: Path, target: str) -> None:
+    """Create prism.yaml with project-level configuration."""
+    config = {"target": target}
+    (directory / "prism.yaml").write_text(
+        yaml.dump(config, default_flow_style=False, sort_keys=False)
+    )
+    console.print(f"[green]✓[/green] Created prism.yaml (default target: {target})")
+
+
+def _load_prism_config(project_path: Path) -> dict[str, Any]:
+    """Load project-level prism.yaml configuration."""
+    config_path = project_path / "prism.yaml"
+    if config_path.exists():
+        return yaml.safe_load(config_path.read_text()) or {}
+    return {}
+
+
+def _create_claude_settings(directory: Path) -> None:
     """Create Claude Code settings with Prism skills and agents."""
     claude_dir = directory / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
@@ -368,85 +396,22 @@ def _create_claude_settings(
                         },
                     ],
                 },
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": ".claude/scripts/check-prism-run.sh",
+                            "timeout": 15,
+                        },
+                    ],
+                },
             ],
         },
     }
 
-    # Add HPC-specific permissions and hooks if target configured
-    if target_config is not None:
-        from prism.remote import merge_permissions_into_settings
-
-        merge_permissions_into_settings(settings, target_config)
-
-        # Add HPC guard hook (PreToolUse on Bash)
-        if "PreToolUse" not in settings["hooks"]:
-            settings["hooks"]["PreToolUse"] = []
-        settings["hooks"]["PreToolUse"].append(
-            {
-                "matcher": "Bash",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": ".claude/scripts/hpc-guard.sh",
-                        "timeout": 5,
-                    },
-                ],
-            },
-        )
-
-        # Add HPC session start hook
-        settings["hooks"]["SessionStart"][0]["hooks"].append(
-            {
-                "type": "command",
-                "command": ".claude/scripts/hpc-session-start.sh",
-                "timeout": 5,
-            },
-        )
-
     settings_file = claude_dir / "settings.json"
     settings_file.write_text(json.dumps(settings, indent=2) + "\n")
-
-
-def _resolve_target_config(target: str) -> dict[str, Any]:
-    """Resolve a target name to a full configuration."""
-    import os
-
-    from prism.remote import load_target_config
-
-    saved = load_target_config(target)
-    if saved is None:
-        console.print(
-            f"[red]Error:[/red] No saved target '{target}'. "
-            f"Run [cyan]prism remote setup {target}[/cyan] first."
-        )
-        raise SystemExit(1)
-
-    console.print(f"[green]✓[/green] Using saved target: [cyan]{target}[/cyan]")
-
-    # Auto-detect username if missing
-    auth = saved.get("auth", {})
-    if not auth.get("username"):
-        username = os.environ.get("USER", "")
-        if username:
-            auth["username"] = username
-            saved["auth"] = auth
-
-    return saved
-
-
-def _create_project_hpc_config(directory: Path, target_config: dict[str, Any]) -> None:
-    """Create .claude/hpc.yaml with project-level HPC configuration."""
-    from prism.remote import create_project_hpc_config
-
-    claude_dir = directory / ".claude"
-    claude_dir.mkdir(parents=True, exist_ok=True)
-
-    project_config = create_project_hpc_config(target_config)
-    hpc_path = claude_dir / "hpc.yaml"
-    with open(hpc_path, "w") as f:
-        yaml.dump(project_config, f, default_flow_style=False, sort_keys=False)
-
-    console.print(f"[green]✓[/green] Created HPC config: [cyan]{hpc_path}[/cyan]")
 
 
 def _init_git_repo(directory: Path, no_git: bool) -> None:
@@ -508,9 +473,7 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
         if (lightcone_dir / "ASP").is_dir() and (lightcone_dir / "Prism").is_dir():
             # Use local clones from Lightcone installer
             install_targets = ["-e", str(lightcone_dir / "ASP")]
-            if (lightcone_dir / "Canvas").is_dir():
-                install_targets += ["-e", str(lightcone_dir / "Canvas")]
-            install_targets += ["-e", str(lightcone_dir / "Prism[canvas]")]
+            install_targets += ["-e", str(lightcone_dir / "Prism")]
             subprocess.run(
                 [str(pip_path), "install", *install_targets],
                 capture_output=True,
@@ -537,114 +500,542 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 
 
 # =============================================================================
-# Remote/HPC target commands
+# Dagster execution commands
+# =============================================================================
+
+
+@main.command()
+@click.argument("outputs", nargs=-1)
+@click.option("--universe", "-u", default=None, help="Universe to materialize for")
+@click.option("--target", "-t", default=None, help="Execution target (e.g., perlmutter)")
+@click.option("--no-build", is_flag=True, help="Skip automatic container image builds")
+def run(
+    outputs: tuple[str, ...],
+    universe: str | None,
+    target: str | None,
+    no_build: bool,
+) -> None:
+    """Materialize ASP outputs via Dagster.
+
+    Runs recipes to produce outputs. Without arguments, materializes all
+    outputs for all universes. Container build specs are automatically
+    built before execution unless --no-build is given.
+
+    Examples:
+        prism run                           # all outputs, all universes
+        prism run accuracy                  # specific output
+        prism run --universe baseline       # specific universe
+        prism run accuracy -u baseline      # specific output + universe
+        prism run --target perlmutter       # run on SLURM
+        prism run --no-build                # skip container builds
+    """
+    from prism.dagster.assets import build_definitions
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    # Read default target from prism.yaml if not specified on command line
+    if target is None:
+        prism_config = _load_prism_config(project_path)
+        target = prism_config.get("target")
+
+    universe_id = universe or "baseline"
+    defs = build_definitions(
+        project_path, target=target, universe_id=universe_id, no_build=no_build,
+    )
+
+    console.print("[bold]Materializing outputs...[/bold]")
+
+    import dagster as dg
+
+    # Select assets to materialize
+    all_assets = list(defs.get_all_asset_specs())
+    if outputs:
+        selection = list(outputs)
+    else:
+        selection = [spec.key.path[-1] for spec in all_assets]
+
+    # Use a persistent DagsterInstance so run history is recorded for the
+    # Dagster webserver (prism dev) to display.
+    dagster_yaml = project_path / "dagster.yaml"
+    if dagster_yaml.exists():
+        instance = dg.DagsterInstance.from_config(str(project_path))
+    else:
+        instance = None
+
+    # Execute
+    try:
+        result = dg.materialize(
+            assets=list(defs.assets),
+            selection=selection,
+            instance=instance,
+        )
+        if result.success:
+            console.print("[green]✓[/green] Materialization complete")
+        else:
+            console.print("[red]✗[/red] Materialization failed")
+            raise SystemExit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise SystemExit(1)
+
+
+@main.command()
+@click.option("--force", is_flag=True, help="Rebuild images even if they already exist")
+@click.option(
+    "--runtime", "-r",
+    type=click.Choice(["docker", "podman-hpc", "shifter"]),
+    default="docker",
+    help="Container runtime to build with (default: docker)",
+)
+def build(force: bool, runtime: str) -> None:
+    """Build container images from Containerfile specs in asp.yaml.
+
+    Scans the analysis specification for container build specs (both
+    analysis-level and per-recipe) and builds any missing images.
+    Images are content-addressed — rebuilds only happen when the
+    Containerfile or dependency files change.
+
+    For NERSC targets, use --runtime to build with podman-hpc (which
+    also migrates images for compute nodes) or pull pre-built images
+    with shifter.
+
+    Examples:
+        prism build                      # build with docker
+        prism build --runtime podman-hpc # build + migrate for NERSC
+        prism build --force              # rebuild all images
+    """
+    from asp.helpers import get_outputs, load_yaml
+
+    from prism.container import (
+        ContainerBuildError,
+        resolve_container_for_slurm,
+        resolve_container_spec,
+    )
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    spec = load_yaml(project_path / "asp.yaml")
+    project_name = spec.get("name") or project_path.name
+
+    # Collect all unique container build specs.
+    build_specs: list[tuple[str, str | dict]] = []  # (label, spec)
+    raw_default = spec.get("container")
+    if raw_default is not None:
+        if isinstance(raw_default, dict) and "build" in raw_default:
+            build_specs.append(("analysis-level", raw_default))
+        elif isinstance(raw_default, str) and runtime != "docker":
+            # Pre-built images need pull/migrate for HPC runtimes
+            build_specs.append(("analysis-level", raw_default))
+
+    for output_def in get_outputs(spec):
+        recipe = output_def.get("recipe")
+        if not recipe:
+            continue
+        raw = recipe.get("container")
+        if raw is not None:
+            if isinstance(raw, dict) and "build" in raw:
+                label = f"recipe:{output_def.get('id', '?')}"
+                build_specs.append((label, raw))
+            elif isinstance(raw, str) and runtime != "docker":
+                label = f"recipe:{output_def.get('id', '?')}"
+                build_specs.append((label, raw))
+
+    if not build_specs:
+        console.print("[dim]No container build specs found in asp.yaml.[/dim]")
+        return
+
+    console.print(
+        f"[bold]Found {len(build_specs)} container spec(s) "
+        f"(runtime: {runtime})[/bold]\n"
+    )
+
+    for label, bspec in build_specs:
+        try:
+            if runtime in ("podman-hpc", "shifter"):
+                tag = resolve_container_for_slurm(
+                    bspec, project_path, project_name, runtime, force=force,
+                )
+            else:
+                tag = resolve_container_spec(
+                    bspec, project_path, project_name, force=force,
+                )
+            console.print(f"  [green]ready[/green]  {label} -> {tag}")
+        except ContainerBuildError as e:
+            console.print(f"  [red]fail[/red]   {label}: {e}")
+
+
+@main.command()
+@click.option("--universe", "-u", default=None, help="Show status for specific universe")
+def status(universe: str | None) -> None:
+    """Show materialization status of all outputs.
+
+    Displays a table of outputs vs universes with materialization state.
+
+    Examples:
+        prism status
+        prism status --universe baseline
+    """
+    from asp.helpers import get_outputs, load_yaml
+
+    from prism.dagster.status import get_all_universe_status, get_output_status
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    spec = load_yaml(project_path / "asp.yaml")
+    name = spec.get("name", "Unknown")
+    outputs = get_outputs(spec)
+
+    if universe:
+        all_status = {universe: get_output_status(project_path, universe)}
+    else:
+        all_status = get_all_universe_status(project_path)
+
+    if not all_status:
+        console.print("[yellow]No universes found.[/yellow]")
+        return
+
+    from rich.table import Table
+
+    table = Table(title=f"{name} — Output Status")
+    table.add_column("Output", style="cyan")
+    for uid in all_status:
+        table.add_column(uid)
+
+    recipe_count = 0
+    total_outputs = len(outputs)
+    materialized = 0
+    total_cells = 0
+    for out in outputs:
+        out_id = out.get("id")
+        if not out_id:
+            continue
+        has_recipe = bool(out.get("recipe"))
+        if has_recipe:
+            recipe_count += 1
+        row = [out_id]
+        for uid, universe_status in all_status.items():
+            s = universe_status.get(out_id, "no_recipe")
+            if has_recipe:
+                total_cells += 1
+            if s == "materialized":
+                materialized += 1
+                row.append("[green]ok[/green]")
+            elif s == "pending":
+                row.append("[dim]pending[/dim]")
+            else:
+                row.append("[yellow]no recipe[/yellow]")
+        table.add_row(*row)
+
+    console.print(table)
+    console.print(f"\n  Recipes: {recipe_count}/{total_outputs} outputs integrated")
+    console.print(f"  Materialized: {materialized}/{total_cells} runs")
+
+    # Show container status
+    from prism.container import get_container_status
+
+    raw_container = spec.get("container")
+    cstatus = get_container_status(raw_container, project_path, name)
+    if cstatus.type == "prebuilt":
+        console.print(f"  Container: prebuilt [cyan]{cstatus.image}[/cyan]")
+    elif cstatus.type == "build":
+        if cstatus.extra.get("error"):
+            console.print(
+                f"  Container: build [red]{cstatus.extra['error']}[/red]"
+            )
+        elif cstatus.exists:
+            console.print(
+                f"  Container: build {cstatus.containerfile} "
+                f"[green]{cstatus.image} (built)[/green]"
+            )
+        else:
+            console.print(
+                f"  Container: build {cstatus.containerfile} "
+                f"[yellow]{cstatus.image} (not built)[/yellow]"
+            )
+
+
+@main.command()
+@click.option("--port", "-p", default=3000, type=int, help="Port for Dagster webserver")
+@click.option("--universe", "-u", default="baseline", help="Universe to load definitions for")
+def dev(port: int, universe: str) -> None:
+    """Launch Dagster webserver UI for the current project.
+
+    Opens a web UI showing the asset graph, run history, and
+    materialization status.
+
+    Examples:
+        prism dev
+        prism dev --port 8080
+        prism dev --universe experiment1
+    """
+    import tempfile
+
+    project_path = Path.cwd()
+    if not (project_path / "asp.yaml").exists():
+        console.print("[red]Error:[/red] No asp.yaml found in current directory.")
+        raise SystemExit(1)
+
+    console.print(f"[bold]Starting Dagster webserver on port {port}...[/bold]")
+    console.print(f"  Open [cyan]http://localhost:{port}[/cyan] in your browser")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    # Generate a temporary Python file that builds Dagster Definitions from
+    # the current ASP project.  dagster-webserver discovers assets via -f.
+    defs_code = (
+        "from pathlib import Path\n"
+        "from prism.dagster.assets import build_definitions\n"
+        f"defs = build_definitions(Path({str(project_path)!r}), "
+        f"universe_id={universe!r}, no_build=True)\n"
+    )
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", prefix="prism_defs_", delete=False,
+        ) as f:
+            f.write(defs_code)
+            defs_file = f.name
+
+        env = {**os.environ, "DAGSTER_HOME": str(project_path)}
+        subprocess.run(
+            ["dagster-webserver", "-f", defs_file, "-h", "0.0.0.0", "-p", str(port)],
+            check=True,
+            env=env,
+        )
+    except KeyboardInterrupt:
+        console.print("\n[dim]Dagster webserver stopped[/dim]")
+    except FileNotFoundError:
+        console.print("[red]Error:[/red] dagster-webserver not found.")
+        console.print("  Install with: [cyan]pip install prism\\[dagster][/cyan]")
+        raise SystemExit(1)
+    finally:
+        # Clean up the temporary definitions file
+        try:
+            Path(defs_file).unlink(missing_ok=True)
+        except NameError:
+            pass
+
+
+# =============================================================================
+# Remote target commands (Dagster executor configuration)
 # =============================================================================
 
 
 @main.group()
 def remote() -> None:
-    """HPC/remote target management commands."""
+    """Manage execution targets (Docker, SLURM)."""
     pass
+
+
+def _run_target_setup_wizard(name: str) -> Path:
+    """Run the interactive target setup wizard.
+
+    Prompts for connection details, scheduler config, and resource limits.
+    Known HPC sites are auto-detected and pre-filled with defaults.
+
+    Returns the path where the target config was saved.
+    """
+    from prism.dagster.sites import detect_site, get_site_defaults
+    from prism.dagster.targets import save_target
+
+    console.print(f"\n[bold]Setting up target: [cyan]{name}[/cyan][/bold]\n")
+
+    # Try to detect a known site from the target name.
+    site_key = detect_site(name)
+    site: dict[str, Any] = {}
+    if site_key:
+        site = get_site_defaults(site_key) or {}
+        display = site.get("display_name", site_key)
+        console.print(
+            f"  Detected known site: [cyan]{display}[/cyan] "
+            f"(using site defaults)\n"
+        )
+
+    # --- Connection ---
+    site_conn = site.get("connection", {})
+    site_sched = site.get("scheduler", {})
+    site_limits = site.get("resource_limits", {})
+    site_partitions = site.get("partitions", {})
+
+    backend = click.prompt(
+        "  Backend",
+        type=click.Choice(["slurm", "pbs"]),
+        default=site.get("backend", "slurm"),
+    )
+    hostname = click.prompt(
+        "  Hostname",
+        default=site_conn.get("hostname", ""),
+    )
+    username = click.prompt(
+        "  Username",
+        default=os.environ.get("USER", ""),
+    )
+    account = click.prompt("  Account/allocation")
+
+    # If the site has named partition presets, let the user pick one.
+    constraint_default = ""
+    container_flags_default: list[str] = []
+    if site_partitions:
+        partition_keys = list(site_partitions.keys())
+        console.print(f"\n  [bold]Available partition presets:[/bold]")
+        for pk in partition_keys:
+            pinfo = site_partitions[pk]
+            desc_parts = []
+            if pinfo.get("constraint"):
+                desc_parts.append(f"constraint={pinfo['constraint']}")
+            if pinfo.get("container_flags"):
+                desc_parts.append(f"flags={' '.join(pinfo['container_flags'])}")
+            desc = ", ".join(desc_parts) if desc_parts else "(no constraints)"
+            console.print(f"    - [cyan]{pk}[/cyan]: {desc}")
+
+        partition = click.prompt(
+            "\n  Partition",
+            type=click.Choice(partition_keys + ["custom"]),
+            default=partition_keys[0],
+        )
+        if partition != "custom" and partition in site_partitions:
+            pinfo = site_partitions[partition]
+            constraint_default = pinfo.get("constraint", "")
+            container_flags_default = pinfo.get("container_flags", [])
+        else:
+            partition = click.prompt("  Custom partition name")
+    else:
+        partition = click.prompt("  Partition", default="regular")
+
+    container_runtime = click.prompt(
+        "  Container runtime",
+        type=click.Choice(["podman-hpc", "shifter", "singularity"]),
+        default=site_sched.get("container_runtime", "podman-hpc"),
+    )
+
+    qos = click.prompt(
+        "  QOS",
+        default=site_sched.get("qos", "regular"),
+    )
+    constraint = click.prompt(
+        "  Constraint (e.g., cpu, gpu, gpu&hbm80g)",
+        default=constraint_default,
+    )
+
+    container_flags_str = click.prompt(
+        "  Container flags (e.g., --gpu --mpi --nccl)",
+        default=" ".join(container_flags_default),
+    )
+    container_flags = container_flags_str.split() if container_flags_str.strip() else []
+
+    console.print("\n  [bold]Resource limits[/bold]")
+    max_nodes = click.prompt(
+        "    Max nodes per job", type=int,
+        default=site_limits.get("max_nodes", 4),
+    )
+    max_walltime = click.prompt(
+        "    Max walltime (minutes)", type=int,
+        default=site_limits.get("max_walltime_minutes", 240),
+    )
+    max_concurrent = click.prompt(
+        "    Max concurrent jobs", type=int,
+        default=site_limits.get("max_concurrent_jobs", 8),
+    )
+    max_node_hours = click.prompt(
+        "    Max node-hours per session", type=int,
+        default=site_limits.get("max_node_hours_per_session", 32),
+    )
+
+    scheduler_config: dict[str, Any] = {
+        "account": account,
+        "partition": partition,
+        "container_runtime": container_runtime,
+    }
+    if qos:
+        scheduler_config["qos"] = qos
+    if constraint:
+        scheduler_config["constraint"] = constraint
+    if container_flags:
+        scheduler_config["container_flags"] = container_flags
+
+    config: dict[str, Any] = {
+        "name": name,
+        "backend": backend,
+        "connection": {"hostname": hostname, "username": username},
+        "scheduler": scheduler_config,
+        "resource_limits": {
+            "max_nodes": max_nodes,
+            "max_walltime_minutes": max_walltime,
+            "max_concurrent_jobs": max_concurrent,
+            "max_node_hours_per_session": max_node_hours,
+        },
+    }
+    if site_key:
+        config["site"] = site_key
+
+    path = save_target(name, config)
+    console.print(f"\n[green]✓[/green] Saved target config to [cyan]{path}[/cyan]")
+    return path
 
 
 @remote.command("setup")
 @click.argument("name", required=False)
-@click.option("--list", "list_targets", is_flag=True, help="List saved targets")
-def remote_setup(name: str | None, list_targets: bool) -> None:
-    """Set up a remote target configuration.
+@click.option("--list", "list_targets_flag", is_flag=True, help="List saved targets")
+def remote_setup(name: str | None, list_targets_flag: bool) -> None:
+    """Configure an execution target.
 
-    Interactive CLI setup that configures scheduler, account, resource limits,
-    permissions, and optional notes for any HPC cluster.
+    Sets up connection details, scheduler config, and resource limits
+    for remote execution backends (SLURM, etc.).
+
+    Known HPC sites (NERSC Perlmutter, OLCF Frontier, ALCF Polaris, ...)
+    are auto-detected from the target name and pre-filled with sensible
+    defaults.  You can override any value during the wizard.
 
     Examples:
         prism remote setup perlmutter
         prism remote setup --list
     """
-    from prism.remote import list_saved_targets, save_target_config
+    from prism.dagster.sites import list_known_sites
+    from prism.dagster.targets import list_targets
 
-    if list_targets:
-        saved = list_saved_targets()
+    if list_targets_flag:
+        saved = list_targets()
         if not saved:
             console.print("[dim]No saved targets.[/dim]")
-            console.print("Run [cyan]prism remote setup <name>[/cyan] to configure one.")
         else:
             console.print("[bold]Saved targets:[/bold]")
             for t in saved:
-                console.print(f"  • {t}")
+                console.print(f"  - {t}")
+
+        known = list_known_sites()
+        console.print(f"\n[bold]Known sites[/bold] (auto-detected defaults):")
+        for key, display in known:
+            console.print(f"  - [cyan]{key}[/cyan]  ({display})")
+        console.print(
+            "\nRun [cyan]prism remote setup <name>[/cyan] to configure a target."
+        )
         return
 
     if name is None:
         console.print("[red]Error:[/red] Provide a target name.")
-        console.print("  prism remote setup perlmutter")
-        console.print("  prism remote setup my-cluster")
         raise SystemExit(1)
 
-    console.print(f"\n[bold]Setting up target: [cyan]{name}[/cyan][/bold]\n")
-
-    # 1. Scheduler
-    scheduler = click.prompt(
-        "  Scheduler", type=click.Choice(["slurm", "pbs", "sge"]), default="slurm"
-    )
-
-    # 2. Account/allocation
-    account = click.prompt("  Account/allocation")
-
-    # 3. Resource limits
-    console.print("\n  [bold]Resource limits[/bold] [dim](Enter to accept defaults)[/dim]")
-    defaults = _default_resource_limits()
-    limits = _prompt_resource_limits(defaults)
-
-    # 4. Permissions
-    permissions = _default_permissions_for_scheduler(scheduler)
-    console.print("\n  [bold]Default permissions:[/bold]")
-    _show_permissions(permissions)
-    if click.confirm("  Customize permissions?", default=False):
-        permissions = _customize_permissions(permissions)
-
-    # 5. Notes
-    notes = _prompt_notes()
-
-    # Build config
-    config: dict[str, Any] = {
-        "target": {
-            "name": name,
-            "scheduler": scheduler,
-        },
-        "auth": {
-            "account": account,
-        },
-        "resource_limits": limits,
-        "permissions": permissions,
-    }
-    if notes:
-        config["notes"] = notes
-
-    # Summary and confirm
-    _print_setup_summary(config, name)
-
-    if not click.confirm("\n  Save this configuration?", default=True):
-        console.print("Aborted.")
-        return
-
-    path = save_target_config(name, config)
-    console.print(f"\n[green]✓[/green] Saved to [cyan]{path}[/cyan]")
-    console.print(f"Use with: [cyan]prism init my-analysis --target {name}[/cyan]")
+    _run_target_setup_wizard(name)
+    console.print(f"Use with: [cyan]prism run --target {name}[/cyan]")
 
 
 @remote.command("show")
 @click.argument("name")
 def remote_show(name: str) -> None:
-    """Show a saved target configuration.
+    """Show a saved target configuration."""
+    from prism.dagster.targets import load_target
 
-    Example:
-        prism remote show perlmutter
-    """
-    from prism.remote import load_target_config
-
-    config = load_target_config(name)
+    config = load_target(name)
     if config is None:
         console.print(f"[red]Error:[/red] No saved target '{name}'.")
-        console.print("Run [cyan]prism remote setup --list[/cyan] to see available targets.")
         raise SystemExit(1)
 
     console.print(f"[bold]Target: {name}[/bold]\n")
@@ -654,328 +1045,29 @@ def remote_show(name: str) -> None:
 @remote.command("edit")
 @click.argument("name")
 def remote_edit(name: str) -> None:
-    """Show the path to a target config for manual editing.
+    """Open a saved target configuration in your editor.
 
-    Example:
+    Uses $EDITOR (or vi) to edit the target YAML file.
+
+    Examples:
         prism remote edit perlmutter
     """
-    from prism.remote import get_targets_dir, load_target_config
+    from prism.dagster.targets import get_targets_dir, load_target
 
-    config = load_target_config(name)
-    if config is None:
+    if load_target(name) is None:
         console.print(f"[red]Error:[/red] No saved target '{name}'.")
+        console.print(f"Run [cyan]prism remote setup {name}[/cyan] to create one.")
         raise SystemExit(1)
 
-    path = get_targets_dir() / f"{name}.yaml"
-    console.print(f"Edit: [cyan]{path}[/cyan]")
-
-
-# =============================================================================
-# Remote helper functions
-# =============================================================================
-
-
-def _default_resource_limits() -> dict[str, int]:
-    """Return sensible default resource limits."""
-    return {
-        "max_nodes": 4,
-        "max_walltime_minutes": 120,
-        "max_concurrent_jobs": 3,
-        "max_node_hours_per_session": 16,
-    }
-
-
-def _prompt_resource_limits(defaults: dict[str, int]) -> dict[str, int]:
-    """Prompt for resource limits with defaults."""
-    return {
-        "max_nodes": click.prompt(
-            "    Max nodes per job", type=int, default=defaults["max_nodes"]
-        ),
-        "max_walltime_minutes": click.prompt(
-            "    Max walltime (minutes)", type=int, default=defaults["max_walltime_minutes"]
-        ),
-        "max_concurrent_jobs": click.prompt(
-            "    Max concurrent jobs", type=int, default=defaults["max_concurrent_jobs"]
-        ),
-        "max_node_hours_per_session": click.prompt(
-            "    Max node-hours per session",
-            type=int,
-            default=defaults["max_node_hours_per_session"],
-        ),
-    }
-
-
-def _default_permissions_for_scheduler(scheduler: str) -> dict[str, list[str]]:
-    """Return default permission tiers for a given scheduler type."""
-    auto_approve = ["python", "python3", "asp", "prism", "ls", "cat", "head", "tail", "grep", "du", "df"]
-    deny = ["rm -rf /", "rm -rf ~", "rm -rf $HOME"]
-
-    if scheduler == "slurm":
-        auto_approve.extend(["squeue", "sacct", "scontrol show"])
-        deny.extend(["scancel --all", "scancel -u"])
-    elif scheduler == "pbs":
-        auto_approve.extend(["qstat", "showq"])
-        deny.extend(["qdel all"])
-    elif scheduler == "sge":
-        auto_approve.extend(["qstat", "qhost"])
-        deny.extend(["qdel '*'"])
-
-    return {
-        "auto_approve": auto_approve,
-        "deny": deny,
-    }
-
-
-def _show_permissions(permissions: dict[str, list[str]]) -> None:
-    """Display permission tiers."""
-    auto = permissions.get("auto_approve", [])
-    deny = permissions.get("deny", [])
-
-    console.print(f"    [green]Auto-approve:[/green] {', '.join(auto)}")
-    console.print(f"    [red]Deny:[/red] {', '.join(deny)}")
-
-
-def _customize_permissions(permissions: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Let user add/remove from permission tiers."""
-    import copy
-
-    result = copy.deepcopy(permissions)
-
-    add_auto = click.prompt(
-        "    Add to auto-approve (comma-separated, or Enter to skip)",
-        default="",
-        show_default=False,
-    )
-    if add_auto.strip():
-        result["auto_approve"].extend(cmd.strip() for cmd in add_auto.split(",") if cmd.strip())
-
-    remove_auto = click.prompt(
-        "    Remove from auto-approve (comma-separated, or Enter to skip)",
-        default="",
-        show_default=False,
-    )
-    if remove_auto.strip():
-        to_remove = {cmd.strip() for cmd in remove_auto.split(",")}
-        result["auto_approve"] = [cmd for cmd in result["auto_approve"] if cmd not in to_remove]
-
-    add_deny = click.prompt(
-        "    Add to deny (comma-separated, or Enter to skip)", default="", show_default=False
-    )
-    if add_deny.strip():
-        result["deny"].extend(cmd.strip() for cmd in add_deny.split(",") if cmd.strip())
-
-    return result
-
-
-def _prompt_notes() -> str:
-    """Prompt for multi-line notes. Blank line to finish."""
-    console.print("\n  [bold]Notes/guidelines for Claude[/bold] [dim](blank line to finish)[/dim]")
-    lines: list[str] = []
-    while True:
-        line = click.prompt("  ", default="", show_default=False)
-        if not line:
-            break
-        lines.append(line)
-    return "\n".join(lines)
-
-
-def _print_setup_summary(config: dict[str, Any], name: str) -> None:
-    """Print a Rich summary of the target configuration."""
-    target = config.get("target", {})
-    auth = config.get("auth", {})
-    limits = config.get("resource_limits", {})
-    notes = config.get("notes", "")
-
-    lines = [
-        f"[bold]Scheduler:[/bold] {target.get('scheduler', 'N/A')}",
-        f"[bold]Account:[/bold] {auth.get('account', 'N/A')}",
-        f"[bold]Max nodes:[/bold] {limits.get('max_nodes', 'N/A')}",
-        f"[bold]Max walltime:[/bold] {limits.get('max_walltime_minutes', 'N/A')} min",
-        f"[bold]Max concurrent:[/bold] {limits.get('max_concurrent_jobs', 'N/A')}",
-        f"[bold]Session budget:[/bold] {limits.get('max_node_hours_per_session', 'N/A')} node-hrs",
-    ]
-    if notes:
-        lines.append(f"[bold]Notes:[/bold] {notes[:60]}{'...' if len(notes) > 60 else ''}")
-
-    panel = Panel("\n".join(lines), title=f"Target: {name}", border_style="cyan")
-    console.print(panel)
-
-
-# =============================================================================
-# Canvas command
-# =============================================================================
-
-
-@main.command()
-@click.argument("target", default=".")
-@click.option("--port", default=8080, type=int, help="Port to serve on")
-@click.option("--no-browser", is_flag=True, help="Don't auto-open browser")
-@click.option("--jupyter", is_flag=True, help="Print JupyterHub proxied URL")
-def canvas(target: str, port: int, no_browser: bool, jupyter: bool) -> None:
-    """Open the ASP Canvas visual editor.
-
-    Launches a Python-served web UI for visualizing and interacting with
-    ASP projects. No Node.js required.
-
-    Install with: pip install prism[canvas]
-
-    Examples:
-        prism canvas
-        prism canvas /some/path
-        prism canvas --port 9000
-        prism canvas --jupyter
-    """
+    target_file = get_targets_dir() / f"{name}.yaml"
+    editor = os.environ.get("EDITOR", "vi")
     try:
-        from asp_canvas.cli import main as canvas_main  # type: ignore[import-not-found]
-    except ImportError:
-        console.print("[red]Error:[/red] Canvas not installed.")
-        console.print("  Install with: [cyan]pip install prism[canvas][/cyan]")
+        subprocess.run([editor, str(target_file)], check=True)
+        console.print(f"[green]✓[/green] Target '{name}' updated.")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        console.print(f"[red]Error:[/red] Could not open editor: {e}")
+        console.print(f"Edit manually: [cyan]{target_file}[/cyan]")
         raise SystemExit(1)
-
-    args = [target]
-    if port != 8080:
-        args.extend(["--port", str(port)])
-    if no_browser:
-        args.append("--no-browser")
-    if jupyter:
-        args.append("--jupyter")
-
-    canvas_main(args, standalone_mode=False)
-
-
-# =============================================================================
-# Navigator command
-# =============================================================================
-
-
-def _get_prism_config_path() -> Path:
-    """Get the path to the Prism global config file."""
-    return Path.home() / ".prism" / "config.yaml"
-
-
-def _load_prism_config() -> dict[str, Any]:
-    """Load Prism global config from ~/.prism/config.yaml."""
-    config_path = _get_prism_config_path()
-    if not config_path.exists():
-        return {}
-    from asp.helpers import load_yaml
-
-    return load_yaml(config_path)
-
-
-def _save_prism_config(config: dict[str, Any]) -> None:
-    """Save Prism global config to ~/.prism/config.yaml."""
-    config_path = _get_prism_config_path()
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    from asp.helpers import save_yaml
-
-    save_yaml(config, config_path)
-
-
-def _get_navigator_path() -> Path | None:
-    """Get Navigator path from config or environment variable."""
-    import os
-
-    env_path = Path(p) if (p := os.environ.get("ASP_NAVIGATOR_PATH")) else None
-    if env_path and env_path.exists():
-        return env_path
-
-    config = _load_prism_config()
-    config_path = config.get("navigator", {}).get("path")
-    if config_path:
-        path = Path(config_path)
-        if path.exists():
-            return path
-
-    return None
-
-
-@main.command()
-@click.option(
-    "--path",
-    "-p",
-    type=click.Path(exists=True, path_type=Path),
-    help="Project path (default: current directory)",
-)
-@click.option(
-    "--configure",
-    is_flag=True,
-    help="Reconfigure Navigator path",
-)
-def navigator(path: Path | None, configure: bool) -> None:
-    """Open the current project in Navigator.
-
-    Navigator is the visual canvas editor for ASP projects. This command
-    starts Navigator for the current project.
-
-    Press Ctrl+C to stop Navigator.
-
-    Examples:
-        prism navigator
-        prism navigator -p /some/path
-        prism navigator --configure
-    """
-    from asp.cli import find_analysis_file
-
-    navigator_path = _get_navigator_path()
-
-    if configure or navigator_path is None:
-        if navigator_path is None:
-            console.print("[yellow]Navigator path not configured.[/yellow]")
-        default_hint = navigator_path or ""
-        user_path = click.prompt(
-            "Where is Navigator installed?",
-            default=str(default_hint) if default_hint else None,
-            type=click.Path(exists=True, path_type=Path),
-        )
-        navigator_path = Path(user_path)
-
-        if not (navigator_path / "package.json").exists():
-            console.print(f"[red]Error:[/red] {navigator_path} doesn't look like Navigator")
-            console.print("  (No package.json found)")
-            raise SystemExit(1)
-
-        config = _load_prism_config()
-        if "navigator" not in config:
-            config["navigator"] = {}
-        config["navigator"]["path"] = str(navigator_path)
-        _save_prism_config(config)
-        console.print("[green]✓[/green] Saved Navigator path to ~/.prism/config.yaml")
-
-        if configure:
-            return
-
-    if path is None:
-        path = Path.cwd()
-
-    analysis_file = find_analysis_file(path)
-    if analysis_file is None:
-        console.print(f"[red]Error:[/red] No asp.yaml found in {path}")
-        raise SystemExit(1)
-
-    project_path = analysis_file.parent.resolve()
-    from urllib.parse import quote
-
-    url = f"http://localhost:3000?project={quote(str(project_path), safe='')}"
-
-    console.print(f"[bold]Starting Navigator for:[/bold] {project_path}")
-    console.print()
-    console.print("[bold green]Open this URL in your browser:[/bold green]")
-    console.print(f"  {url}")
-    console.print()
-    console.print("[dim]Press Ctrl+C to stop (ignore the localhost:3000 URL below)[/dim]\n")
-
-    try:
-        subprocess.run(
-            ["npm", "run", "dev:all"],
-            cwd=navigator_path,
-            check=True,
-        )
-    except KeyboardInterrupt:
-        console.print("\n[dim]Navigator stopped[/dim]")
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Error:[/red] Navigator exited with code {e.returncode}")
-        raise SystemExit(e.returncode)
 
 
 if __name__ == "__main__":

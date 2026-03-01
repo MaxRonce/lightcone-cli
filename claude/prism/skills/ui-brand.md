@@ -2,46 +2,46 @@
 
 Visual patterns for user-facing Prism output. Skills reference this file for consistent formatting.
 
+The principle: use markdown idiomatically. Minimal Unicode decoration. Let the content breathe.
+
 ## Stage Banners
 
-Use for major phase transitions.
+Use for major phase transitions. A markdown `###` heading.
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► {STAGE NAME}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### Research Question
 ```
 
-**Stage names (uppercase):**
-- `RESEARCH QUESTION`
-- `ANALYSIS STRUCTURE`
-- `DEEP DIVE — [CHUNK NAME]`
-- `FINALIZING`
-- `SPECIFICATION COMPLETE ✓`
+**Stage names:**
+- `Research Question`
+- `Analysis Structure`
+- `Deep Dive — [Section]`
+- `Finalizing`
+- `Specification Complete`
+- `Verify — <universe_id>`
+- `Verification Report — <universe_id>`
 
 ---
 
 ## Status Symbols
 
 ```
-✓  Complete / Reviewed / Passed
-○  Pending / Unreviewed
-◆  In Progress
-✗  Failed / Error
-⚠  Warning
+✓  Complete / Passed
+○  Pending
+✗  Failed
 ```
 
 ---
 
 ## Action Prompts
 
-When user input or action is needed:
+When user input is needed, use bold text:
 
 ```
-───────────────────────────────────────────────────────────────
-→ ACTION DESCRIPTION
-───────────────────────────────────────────────────────────────
+**What are you trying to learn? Describe the research question in your own words.**
 ```
+
+No boxes, no rules, no blockquotes (those render grey/dimmed).
 
 ---
 
@@ -50,23 +50,14 @@ When user input or action is needed:
 At end of major completions:
 
 ```
-───────────────────────────────────────────────────────────────
-
-▶ Next Up
+---
+**Next up**
 
 **{Description}** — {one-line detail}
 
 `{copy-paste command}`
 
-<sub>`/clear` first → fresh context window</sub>
-
-───────────────────────────────────────────────────────────────
-
-Also available:
-- `/prism-insights` — description
-- Other options
-
-───────────────────────────────────────────────────────────────
+Also available: `/prism-verify`, ...
 ```
 
 ---
@@ -74,17 +65,17 @@ Also available:
 ## Tables
 
 ```
-| Chunk | Decisions | Reviewed | Artefacts |
-|-------|-----------|----------|-----------|
-| main  | 3         | 2/3      | 2         |
+| Section | Decisions | Outputs |
+|---------|-----------|---------|
+| main    | 3         | 2       |
 ```
 
 ---
 
 ## Anti-Patterns
 
-- Varying banner widths
-- Mixing banner styles (`===`, `---`, `***`)
-- Skipping `PRISM ►` prefix in banners
+- Heavy Unicode box-drawing (━, ─── rules, ► arrows)
+- Boxing prompts in horizontal rules
 - Random emoji
+- Walls of decoration that distract from content
 - Missing Next Up block after completions

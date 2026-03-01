@@ -1,0 +1,4 @@
+[submodule "extern/ASP"]
+	path = extern/ASP
+	url = git@github.com:LightconeResearch/ASP.git
+	branch = feat/inline-recipes

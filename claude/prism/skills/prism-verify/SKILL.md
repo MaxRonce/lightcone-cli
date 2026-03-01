@@ -20,13 +20,9 @@ Verify a completed ASP analysis. Checks that implementation matches specificatio
 3. Read `CLAUDE.md` for project context
 4. Ask: "Should I also check success criteria against results, or just verify spec-implementation alignment?"
 
-Display banner, then run all checks. Collect findings and present the full report at the end.
+Stage banner: VERIFY — <universe_id>
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► VERIFY — <universe_id>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Run all checks. Collect findings and present the full report at the end.
 
 ---
 
@@ -43,7 +39,17 @@ Record pass/fail. Continue with remaining checks even if validation fails.
 
 ## Check 2: Result Files
 
-For every **output**, check that `results/<universe_id>/<output_id>.<ext>` exists. For every **artefact**, check that `results/<universe_id>/<chunk>/<artefact_id>.<ext>` exists. Record each as present or missing.
+For every **output**, check that `results/<universe_id>/<output_id>.<ext>` exists. Record each as present or missing.
+
+---
+
+## Check 2.5: Materialization Status
+
+```bash
+prism status --universe <universe_id>
+```
+
+Cross-reference `prism status` output with the file-based check above. If `prism status` shows "ok" but files are missing (or vice versa), flag the inconsistency.
 
 ---
 
@@ -65,14 +71,13 @@ Check that `results/<universe_id>/run_metadata.yaml` exists and is consistent.
 For each `type: metric` output where the result file exists:
 
 1. Check it has `{"value": ...}` JSON structure
-2. If `dtype` declared, check the value type matches
-3. If `range: [min, max]` declared, check value is within bounds
+2. Check the value is a valid number (int or float)
 
 ---
 
 ## Check 5: Decision-Code Alignment
 
-**The most important check.** For each chunk:
+**The most important check.** For the analysis:
 
 1. Read implementation plans and code
 2. Check that the code accepts parameters for each decision and that no decision values are hardcoded
@@ -86,10 +91,10 @@ Be pragmatic — the code may parse option IDs into internal representations (e.
 
 **Skip if the user opted out during Setup.**
 
-For each success criterion in `asp.yaml` (analysis-level and per-chunk):
-1. If a metric can directly verify it (e.g., "accuracy > 95%" → check `accuracy.json`), do so
-2. If verification requires qualitative judgment, note as "needs manual review"
-3. If no results relate to it, flag as unverifiable
+For each success criterion in `asp.yaml`:
+1. If the criterion has `output` and `condition` fields, read the referenced output's result file and evaluate the condition. Report pass/fail.
+2. If the criterion has only a `claim` (no `output` reference), use judgment: check if any result can verify it. Note "needs manual review" for qualitative criteria.
+3. If no results relate to it, flag as unverifiable.
 
 ---
 
@@ -97,7 +102,7 @@ For each success criterion in `asp.yaml` (analysis-level and per-chunk):
 
 Scan for drift between spec and implementation:
 
-1. **Undeclared outputs** — files in `results/<universe_id>/` not declared as outputs or artefacts
+1. **Undeclared outputs** — files in `results/<universe_id>/` not declared as outputs
 2. **Stale descriptions** — implementation plans describe an approach that diverges from asp.yaml
 
 Only flag things you're reasonably confident about.
@@ -106,11 +111,7 @@ Only flag things you're reasonably confident about.
 
 ## Report
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► VERIFICATION REPORT — <universe_id>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: VERIFICATION REPORT — <universe_id>
 
 ### Summary Table
 
@@ -145,32 +146,9 @@ List each finding grouped by check:
 
 ### Suggested Fixes
 
-If there are warnings or failures:
+If there are warnings or failures, show an action prompt (see ui-brand.md) titled "SUGGESTED FIXES" with a numbered list of concrete fixes.
 
-```
-───────────────────────────────────────────────────────────────
-→ SUGGESTED FIXES
-───────────────────────────────────────────────────────────────
-
-1. Fix scaling in scripts/preprocess.py:42 to use StandardScaler
-2. Add model_size metric to asp.yaml outputs
-3. Add missing result file: results/baseline/conclusion.md
-───────────────────────────────────────────────────────────────
-```
-
-If everything passes:
-
-```
-───────────────────────────────────────────────────────────────
-
-▶ All checks passed
-
-This analysis is verified for universe `baseline`.
-
-<sub>/clear first → CLAUDE.md has everything needed to pick back up</sub>
-
-───────────────────────────────────────────────────────────────
-```
+If everything passes, show a Next Up block confirming the analysis is verified for this universe.
 
 ---
 

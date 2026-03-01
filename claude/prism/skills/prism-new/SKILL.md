@@ -1,18 +1,20 @@
 ---
 name: prism-new
-description: Create a new ASP analysis project - scope research question, structure chunks, identify decisions with literature support
-allowed-tools: Read, Write(asp.yaml), Write(universes/*), Write(CLAUDE.md), Write(.claude/hpc.yaml), Edit(asp.yaml), Edit(universes/*), Edit(CLAUDE.md), Edit(.claude/hpc.yaml), Glob, Grep, Bash(asp:*), Bash(mkdir:*), WebSearch, WebFetch, AskUserQuestion
+description: Create a new ASP analysis project with integrated literature support. Scope the research question through conversation, structure outputs and decisions, search for and extract evidence from scientific papers, and build a complete asp.yaml specification. Use when starting a new analysis, when the user says "new project", "new analysis", or "scope". Triggers on "new", "scope", "research question", "start analysis".
+allowed-tools: Read, Write(asp.yaml), Write(universes/*), Write(CLAUDE.md), Edit(asp.yaml), Edit(universes/*), Edit(CLAUDE.md), Glob, Grep, Bash(asp:*), Bash(prism:*), Bash(mkdir:*), Bash(echo:*), WebSearch, WebFetch, AskUserQuestion, Task
 ---
 
 # /prism-new
 
-Create a new ASP analysis project through conversation. Build the spec iteratively so the user can watch it take shape in the navigator.
+Create a new ASP analysis project through conversation. Build the spec iteratively so the user sees progress in the navigator. Literature search and decision identification happen in distinct phases -- talk first, then extract papers, then identify decisions informed by both conversation and literature.
 
 ## References
 
-- [Prism Reference](./../prism/SKILL.md) — core concepts, CLI, validation
-- [Decision Guide](./decision-guide.md) — how to identify and structure decisions
-- [UI Brand](./../ui-brand.md) — visual formatting patterns
+- [Prism Reference](./../prism/SKILL.md) -- core concepts, CLI, validation
+- [Decision Guide](./decision-guide.md) -- decision identification, E/N/U classification, blind-spot checklist
+- [Literature Extraction](./literature-extraction.md) -- subagent prompt template for paper processing
+- [UI Brand](./../ui-brand.md) -- visual formatting patterns
+- [CLAUDE.md Template](./../../templates/CLAUDE.md) -- asp.yaml structure, insights format, CLI
 
 ## Setup
 
@@ -23,15 +25,7 @@ Create a new ASP analysis project through conversation. Build the spec iterative
 
 ## Phase 1: Research Question
 
-Display stage banner:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► RESEARCH QUESTION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-Start with an open question:
+Stage banner: RESEARCH QUESTION
 
 > "What are you trying to learn? Describe the question in your own words."
 
@@ -39,105 +33,60 @@ Then sharpen:
 - "What would a clear answer look like?" (becomes success criteria)
 - "Why does this matter?" (context for decisions)
 
-Don't checklist-walk. Follow what the user is uncertain or excited about.
-
-**Write to asp.yaml:**
-```yaml
-version: "1.0"
-analysis:
-  name: "<analysis name>"
-  problem: |
-    <problem statement from conversation>
-  success_criteria:
-    - "<concrete criterion>"
-```
-
-This gives the user something to see in the navigator immediately.
+**Write to asp.yaml immediately** with `version`, `name`, `description`, `success_criteria`. This gives the user something visible in the navigator right away.
 
 ---
 
 ## Phase 2: Analysis Structure
 
-Display stage banner:
+Stage banner: ANALYSIS STRUCTURE
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► ANALYSIS STRUCTURE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+> "Walk me through your analysis step by step. What goes in, what comes out at the end?"
 
-Understand the pipeline:
+From this, identify **inputs and outputs**. If the workflow has stages that genuinely need to be independent, use AskUserQuestion to confirm whether to split into sub-analyses. Otherwise, structure as a single flat analysis.
 
-> "Walk me through how you'd do this step by step. What happens first? What would you want to check before moving on?"
+For multi-stage: confirm stage boundaries, map each stage's inputs/outputs and `from:` cross-references. See CLAUDE.md template for YAML structure.
 
-From this, identify **chunks**:
-- Single `main` chunk if it's a straightforward analysis
-- Multiple chunks if there are clear stages with inspectable outputs
-
-For multi-chunk analyses, map:
-- What does each chunk produce? (artefacts)
-- What does the next chunk consume?
-- What decisions belong where?
-
-Then ask:
-
-> "Want to fully scope all chunks now, or start with [first chunk]?"
-
-**Update asp.yaml** with chunk structure:
-```yaml
-analysis:
-  inputs:
-    - id: <input_id>
-      type: data
-      source: "<path or URL>"
-  outputs:
-    - id: <output_id>
-      type: <figure|table|data|report>
-
-chunks:
-  first_chunk:
-    problem: "What this chunk accomplishes"
-    artefacts:
-      - id: intermediate_output
-        type: data
-
-  second_chunk:
-    problem: "What this chunk accomplishes"
-    # decisions TBD
-```
+**Update asp.yaml** with `inputs` and `outputs` (extending the spec from Phase 1).
 
 ---
 
 ## Phase 3: Deep Dive
 
-Display stage banner (repeat for each chunk being scoped):
+Stage banner: DEEP DIVE -- [SECTION NAME]
+
+Ask the user if they want to do a literature deep dive for this section. If not, skip straight to decision identification.
+
+### Paper Collection
+
+Ask if the user has specific papers they want to look into. Also search with WebSearch for highly relevant papers -- keep it limited, only papers that directly bear on the analysis. Use AskUserQuestion to present the list with a one-line description of each paper and why it's relevant. The user can check off which ones to extract and add any others.
+
+### Extraction
+
+For each approved paper: `asp paper add <doi>`, `asp paper path <doi>`, then spawn one Task subagent per paper using [literature-extraction.md](./literature-extraction.md). Spawn all in a single message (parallel). Show progress as results come in:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► DEEP DIVE — [CHUNK NAME]
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✓ Ba et al. 2016 -- 3 insights
+  ○ Wu & He 2018 (reading...)
 ```
 
-For each chunk being scoped, explore:
+Write extracted insights to asp.yaml immediately. Synthesize findings by topic for the user.
 
-1. **Decisions** — What choices matter? See [decision-guide.md](./decision-guide.md)
-2. **Data** — What does the input look like? (characteristics that affect decisions)
-3. **Assumptions** — What could go wrong? What's load-bearing?
+### Decision Identification
 
-This is one exploratory conversation, not a rigid sequence. Cover what's relevant.
+Use the conversation and literature to identify decisions. Apply [decision-guide.md](./decision-guide.md):
 
-**Update asp.yaml incrementally** as decisions are identified. Don't wait until the end.
+- What could be done differently and still be defensible?
+- Where did papers disagree or compare alternatives?
+- Where did the user express uncertainty?
 
-### Literature Notes
+Present candidate decisions as a batch for the user to review. Classify each as Type E, N, or U. Write confirmed decisions to asp.yaml with options, rationale, and insight references.
 
-As methods are mentioned, note papers for later:
-- Ask: "Are there specific papers that should inform this?"
-- Note any papers/methods the user mentions
-- Don't extract insights yet — that's a separate step with `/prism-insights`
+**Probe for blind spots** -- analysts over-focus on methods and neglect data handling. Probe 1-3 areas: data exclusion, variable operationalization, inference criteria.
 
-### Tracking Reviewed Decisions
+### Decision Review
 
-When the user explicitly weighs in on a decision, mark it `reviewed: true` in the spec. Decisions you infer or fill with defaults stay unreviewed.
+Every decision is **Confirmed** (user weighed in) or **Inferred** (marked `[UNCONFIRMED]`). Track both in the Key Decisions section of `CLAUDE.md`.
 
 ---
 
@@ -149,103 +98,33 @@ Review the spec with the user. Update asp.yaml with any additions.
 
 ---
 
-## Compute Configuration (optional)
-
-**Only activate this phase if `.claude/hpc.yaml` exists in the project.**
-
-Display stage banner:
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► COMPUTE CONFIGURATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
-Read `.claude/hpc.yaml` and show current resource limits:
-
-```
-Current HPC limits:
-  Max nodes/job: 4
-  Max walltime: 120 min
-  Max node-hours/session: 16
-```
-
-If the config has a `notes` field, display it:
-
-```
-Compute notes:
-  <notes from config>
-```
-
-> "These are your current HPC resource limits. Want to adjust them for this analysis?"
-
-If yes:
-- Update `.claude/hpc.yaml` with new limits
-- Update the Compute Environment section in `CLAUDE.md` to reflect changes
-
-If no, continue to Finalize.
-
----
-
 ## Finalize
 
-Display stage banner:
+Stage banner: FINALIZING
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► FINALIZING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+### Validate
 
-1. Validate: `asp validate asp.yaml`
-2. Fix any validation errors
-3. Generate baseline universe: `asp universe generate -n baseline`
+1. `asp validate asp.yaml` -- fix errors, iterate until clean
+2. If insights exist: `asp validate asp.yaml --verify-evidence`
+
+### Generate Baseline Universe
+
+```bash
+asp universe generate -n baseline
+```
 
 ### Populate CLAUDE.md
 
-Read the existing `CLAUDE.md` (created by `prism init`). Replace the
-`## Analysis Details` section at the bottom with project-specific content:
+Read the existing `CLAUDE.md` (created by `prism init`). Replace the `## Analysis Details` section with project-specific content:
 
-```markdown
-## Analysis Details
+- **Description**: from asp.yaml
+- **Structure**: for each section (top-level and sub-analyses), list decision IDs with labels and output IDs
+- **Key Decisions**: what each controls and its default. Mark agent-inferred decisions with [UNCONFIRMED]
+- **Literature Support**: N insights from P papers, DOIs, which decisions they inform (or "No literature added during scoping")
+- **Domain Context**: important things the user explained during scoping -- data characteristics, constraints, why certain approaches were preferred. This is context that would be lost after `/clear`.
+- **Implementation Notes**: domain-specific guidance from the conversation (libraries, data formats, gotchas)
 
-### Problem
-<problem statement from asp.yaml>
-
-### Chunks
-
-**<chunk_name>** — <chunk problem>
-- Decisions: <list of decision IDs with labels>
-- Artefacts: <list of artefact IDs if any>
-
-(Repeat for each chunk)
-
-### Key Decisions
-<For each reviewed decision, briefly note what it controls and the default>
-
-### Implementation Notes
-<Any domain-specific guidance that came up during the conversation —
-libraries mentioned, data format notes, known gotchas, etc.>
-```
-
-This section is what makes CLAUDE.md useful for building — it gives Claude Code
-the context to implement without re-reading the entire conversation.
-
-### Summary
-
-Present a brief summary:
-
-```
-| Chunk | Decisions | Artefacts | Status |
-|-------|-----------|-----------|--------|
-| main  | 3         | 2         | ✓      |
-| ...   | ...       | ...       | ...    |
-```
-
-- Problem statement
-- Key decisions (noting which are ✓ reviewed vs ○ unreviewed)
-
-Then:
+### Review with User
 
 > "Anything you'd like to change? Otherwise the specification is ready."
 
@@ -255,47 +134,26 @@ If edits requested, apply, re-validate, and update CLAUDE.md.
 
 ## Done
 
-When ready to proceed:
+Stage banner: SPECIFICATION COMPLETE
+
+Show summary table:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► SPECIFICATION COMPLETE ✓
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+| Section       | Decisions | Outputs | Insights |
+|---------------|-----------|---------|----------|
+| (top-level)   | 3         | 2       | 5        |
+| sub_analysis  | ...       | ...     | ...      |
 ```
 
-List chunks and their status:
+Then show a Next Up block (see ui-brand.md) with:
 
-```
-| Chunk | Decisions | Reviewed | Artefacts |
-|-------|-----------|----------|-----------|
-| main  | 3         | 2/3      | 2         |
-```
+- Run `/clear` to free up context, then start building
+- Write scripts recipe-ready (parameterized, results to convention paths). See CLAUDE.md for conventions
+- When scripts work, integrate: add `recipe:` blocks to outputs, `prism status`, `prism run`
+- Every decision becomes a parameter -- no hardcoded values
+- Also available: `/prism-verify`
 
-Then the Next Up block:
-
-```
-───────────────────────────────────────────────────────────────
-
-▶ Next Up
-
-Start building — ask me to implement a chunk
-(e.g. "implement the main chunk")
-
-Every decision becomes a parameter — no hardcoded values.
-New decisions can be added later.
-See CLAUDE.md for details.
-
-<sub>/clear first → CLAUDE.md has everything needed to pick back up</sub>
-
-───────────────────────────────────────────────────────────────
-
-Also available:
-- `/prism-insights` — add literature support to decisions
-
-───────────────────────────────────────────────────────────────
-```
-
----
+Prompt the user to `/clear` before starting implementation. The scoping conversation consumes significant context. Everything needed to continue is captured in `asp.yaml` and `CLAUDE.md`.
 
 ---
 
@@ -305,18 +163,21 @@ Also available:
 
 You MUST NOT write Python, R, or other implementation code.
 
-You MUST ONLY create/modify:
-- `asp.yaml`
-- `universes/*.yaml`
-- `CLAUDE.md` (during Finalize step only)
+You MUST ONLY create/modify: `asp.yaml`, `universes/*.yaml`, `CLAUDE.md` (Finalize only).
+
+You MUST NOT fabricate quotes -- all evidence must pass `asp validate --verify-evidence`.
+
+You MUST spawn subagents (via Task) for paper processing. One paper per subagent. Never read a PDF in the main agent context.
 
 ---
 
-## Anti-patterns
+## Anti-Patterns
 
-- **Waiting to write** — Update asp.yaml after each phase so the user sees progress
-- **Checklist walking** — Don't ask every question regardless of context
-- **Over-chunking** — Single chunk is fine for simple analyses
-- **Accepting vague goals** — "Analyze this data" is not a research question
-- **Implementation questions** — "What preprocessing?" belongs in the build phase, not here
-- **Writing insights directly** — Always defer to `/prism-insights` for evidence extraction
+- **Waiting to write** -- Update asp.yaml after each decision crystallizes, not in bulk at the end
+- **Accepting vague goals** -- "Analyze this data" is not a research question; push back
+- **Method-only decisions** -- Actively probe for data handling and exclusion criteria, not just method choices
+- **Literature as afterthought** -- Do not defer all literature to the end. Collect papers during conversation (Mode 1) and extract before identifying decisions (Mode 2 before Mode 3)
+- **Too many papers** -- ~2 papers per topic area, max 10 per section; do not try to be exhaustive
+- **Background interruptions** -- Never spawn search or extraction subagents during conversation. Collect candidates in Mode 1, process them in Mode 2
+- **Reading PDFs in main context** -- Always delegate to subagents; PDFs consume too much context
+- **Skipping verification** -- If quotes were extracted, always run `asp validate --verify-evidence`

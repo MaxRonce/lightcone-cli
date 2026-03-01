@@ -20,16 +20,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "asp>=0.0.6",
+    "asp @ git+https://github.com/LightconeResearch/ASP.git@main",
     "click>=8.0",
     "pyyaml>=6.0",
     "rich>=13.0",
+    "dagster>=1.9",
+    "dagster-webserver>=1.9",
+    "dagster-docker>=0.25",
 ]
 
 [project.optional-dependencies]
-canvas = [
-    "asp-canvas>=0.1",
-]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
@@ -44,6 +44,9 @@ prism = "prism.cli:main"
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.version]
 source = "vcs"
