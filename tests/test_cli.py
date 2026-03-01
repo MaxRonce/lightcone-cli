@@ -299,6 +299,36 @@ class TestAutoTrigger:
         assert "Created ASP analysis project" in result.output
 
 
+class TestProfilesCommand:
+    """Tests for the prism profiles command."""
+
+    def test_profiles_no_prism_yaml(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(main, ["profiles"])
+        assert result.exit_code == 0
+        assert "no prism.yaml" in result.output.lower() or "No prism.yaml" in result.output
+
+    def test_profiles_lists_profiles(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        import yaml
+        (tmp_path / "prism.yaml").write_text(yaml.dump({
+            "profiles": {
+                "default": {"site": "perlmutter"},
+                "production": {"site": "perlmutter", "qos": "regular", "nodes": 8, "time_limit": "6h"},
+            }
+        }, sort_keys=False))
+        (tmp_path / "asp.yaml").write_text(yaml.dump({"name": "my-analysis"}, sort_keys=False))
+        result = runner.invoke(main, ["profiles"])
+        assert result.exit_code == 0
+        assert "default" in result.output
+        assert "production" in result.output
+        assert "perlmutter" in result.output
+
+    def test_profiles_help(self, runner: CliRunner):
+        result = runner.invoke(main, ["profiles", "--help"])
+        assert result.exit_code == 0
+
+
 class TestRemoteCommandRemoved:
     """Verify that the old remote commands are gone."""
 

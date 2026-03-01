@@ -46,7 +46,7 @@ def _get_plugin_source_dir() -> Path | None:
 def main(ctx: click.Context) -> None:
     """Prism - ASP-compliant Agentic Layer CLI."""
     ctx.ensure_object(dict)
-    if ctx.invoked_subcommand == "setup":
+    if ctx.invoked_subcommand in ("setup", "profiles"):
         return
     from prism.dagster.targets import get_config_path
     if not get_config_path().exists():
@@ -851,6 +851,50 @@ def dev(port: int, universe: str) -> None:
             Path(defs_file).unlink(missing_ok=True)
         except NameError:
             pass
+
+
+# =============================================================================
+# Profiles command
+# =============================================================================
+
+
+@main.group(invoke_without_command=True)
+@click.pass_context
+def profiles(ctx: click.Context) -> None:
+    """List and manage compute profiles for this project."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    project_path = Path.cwd()
+    prism_yaml = project_path / "prism.yaml"
+    if not prism_yaml.exists():
+        click.echo("No prism.yaml found. Run 'prism init' first.")
+        return
+
+    from prism.dagster.profiles import load_profiles
+
+    profile_data = load_profiles(project_path)
+    if not profile_data:
+        click.echo("No profiles defined in prism.yaml.")
+        return
+
+    # Get project name from asp.yaml
+    asp_yaml = project_path / "asp.yaml"
+    project_name = project_path.name
+    if asp_yaml.exists():
+        with open(asp_yaml) as f:
+            asp_data = yaml.safe_load(f) or {}
+        project_name = asp_data.get("name", project_name)
+
+    click.echo(f"\n  {project_name} — Compute Profiles\n")
+    click.echo(f"  {'PROFILE':<14}{'SITE':<14}{'QOS':<10}{'NODES':<7}{'TIME'}")
+    for name, prof in profile_data.items():
+        site = prof.get("site", "—")
+        qos = prof.get("qos", "—")
+        nodes = prof.get("nodes", "—")
+        time_limit = prof.get("time_limit", "—")
+        click.echo(f"  {name:<14}{site:<14}{qos:<10}{str(nodes):<7}{time_limit}")
+    click.echo(f"\n  Use: prism run --profile <name>\n")
 
 
 # =============================================================================
