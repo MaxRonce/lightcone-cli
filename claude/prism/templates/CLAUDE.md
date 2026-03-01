@@ -60,7 +60,9 @@ version: "1.0"
 name: "My Analysis"
 description: "What this analysis investigates."
 success_criteria:
-  - "Achieve >95% accuracy on held-out test set"
+  - claim: "Achieve >95% accuracy on held-out test set"
+    output: accuracy
+    condition: "value > 0.95"
 inputs:
   - id: training_data
     type: data
@@ -74,6 +76,19 @@ decisions:
     options:
       standard: { label: "StandardScaler" }
       minmax: { label: "MinMaxScaler" }
+  use_pca:
+    label: "Use PCA"
+    default: "no"
+    options:
+      "yes": { label: "Yes" }
+      "no": { label: "No" }
+  n_components:
+    label: "PCA Components"
+    when: use_pca.yes             # only exists when use_pca=yes
+    default: "50"
+    options:
+      "50": { label: "50 components" }
+      "100": { label: "100 components" }
 outputs:
   - id: accuracy
     type: metric
@@ -123,6 +138,32 @@ analyses:
 **Every decision must be parameterized in code** -- never hardcode a decision value. Accept all decisions as CLI args.
 
 **Underscore convention:** IDs use underscores in `asp.yaml` (`prior_range`). Prism passes `--prior_range wide`. Scripts must match: `parser.add_argument('--prior_range')`, **not** `--prior-range`.
+
+### Decision Constraints
+
+Options can declare constraints using `decision_id.option_id` format:
+
+```yaml
+options:
+  method_a:
+    label: "Method A"
+    incompatible_with: ["scaling.minmax"]   # cannot coexist in a universe
+    requires: ["library.scipy"]             # must be selected together
+```
+
+**Conditional decisions** use `when:` -- the decision only exists when a specific option is selected (see `n_components` example above).
+
+**Excluded options** record choices that were considered but rejected:
+
+```yaml
+options:
+  deprecated_method:
+    label: "Old Method"
+    excluded: true
+    excluded_reason: "Superseded by method_a; see insight_id"
+```
+
+Excluded options cannot be defaults or selected in universes.
 
 ### Writing Results
 
