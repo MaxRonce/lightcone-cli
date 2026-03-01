@@ -78,6 +78,15 @@ class TestGetSiteDefaults:
         assert "podman-hpc" in site["container_runtimes"]
         assert "shifter" in site["container_runtimes"]
 
+    def test_local_site_exists(self):
+        defaults = get_site_defaults("local")
+        assert defaults is not None
+        assert defaults["backend"] == "local"
+
+    def test_local_site_display_name(self):
+        defaults = get_site_defaults("local")
+        assert defaults["display_name"] == "Local"
+
     def test_unknown(self):
         assert get_site_defaults("nonexistent") is None
 
@@ -87,6 +96,11 @@ class TestListKnownSites:
         sites = list_known_sites()
         keys = [s[0] for s in sites]
         assert "perlmutter" in keys
+
+    def test_local_in_known_sites(self):
+        sites = list_known_sites()
+        keys = [s[0] for s in sites]
+        assert "local" in keys
 
     def test_has_display_names(self):
         sites = list_known_sites()
@@ -111,11 +125,15 @@ class TestSiteDefaultsSchema:
 
     def test_all_sites_have_container_runtime(self):
         for key, site in SITE_DEFAULTS.items():
+            if site.get("backend") == "local":
+                continue
             assert "container_runtime" in site["scheduler"], \
                 f"Site '{key}' missing scheduler.container_runtime"
 
     def test_all_node_types_have_required_fields(self):
         for key, site in SITE_DEFAULTS.items():
+            if site.get("backend") == "local":
+                continue
             for nname, ninfo in site["node_types"].items():
                 assert "constraint" in ninfo, \
                     f"Site '{key}' node_type '{nname}' missing constraint"
@@ -126,12 +144,16 @@ class TestSiteDefaultsSchema:
 
     def test_all_qos_options_have_description(self):
         for key, site in SITE_DEFAULTS.items():
+            if site.get("backend") == "local":
+                continue
             for qname, qinfo in site["qos_options"].items():
                 assert "description" in qinfo, \
                     f"Site '{key}' qos_option '{qname}' missing description"
 
     def test_exactly_one_default_qos(self):
         for key, site in SITE_DEFAULTS.items():
+            if site.get("backend") == "local":
+                continue
             defaults = [q for q, info in site["qos_options"].items()
                         if info.get("default")]
             assert len(defaults) == 1, \

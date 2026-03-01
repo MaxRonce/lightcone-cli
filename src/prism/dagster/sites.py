@@ -54,6 +54,17 @@ SITE_DEFAULTS: dict[str, dict[str, Any]] = {
             "max_node_hours_per_session": 64,
         },
     },
+    "local": {
+        "hostname_patterns": [],
+        "display_name": "Local",
+        "backend": "local",
+        "connection": {},
+        "scheduler": {},
+        "node_types": {},
+        "qos_options": {},
+        "container_runtimes": [],
+        "resource_limits": {},
+    },
 }
 
 
