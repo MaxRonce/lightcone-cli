@@ -12,7 +12,7 @@ You are inside a loop. `CLAUDE.md` is your spec -- it's in the system prompt abo
 
 ## References
 
-- [Prism Reference](./../prism/SKILL.md) -- core concepts, CLI, validation
+- [Prism Reference](../../../CLAUDE.md) -- core concepts, CLI, validation
 - [Prism Verify](./../prism-verify/SKILL.md) -- verification checks
 
 ## Loop

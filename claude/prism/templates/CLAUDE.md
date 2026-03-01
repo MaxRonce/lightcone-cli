@@ -2,9 +2,17 @@
 
 ## Project: {{name}}
 
-ASP (Agentic Science Protocol) analysis project, built with Prism. Start with `/prism-new` to scope a research question.
+ASP (Agentic Science Protocol) analysis project, built with Prism.
 
-**Skills:** `/prism-new` (scope + literature), `/prism-verify` (verify).
+### Skill Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/prism-new` | Scope question, structure decisions, integrate literature |
+| `/prism-build` | Build loop -- spec to materialized results |
+| `/prism-verify` | Verify results, decision-code alignment, success criteria |
+
+**Workflow:** `/prism-new` --> `/prism-build` --> `/prism-verify`
 
 ### Source of Truth
 
@@ -212,6 +220,16 @@ insights:
 Link to decisions: `options: { layer_norm: { insights: [layer_norm_stability] } }`
 
 Literature is integrated into `/prism-new` during scoping.
+
+Artifacts (computed outputs) use `artifact:` instead of `doi:`:
+
+```yaml
+evidence:
+  - id: e1
+    artifact: "accuracy"
+    quote:
+      exact: "StandardScaler achieved 97% accuracy vs 91% for MinMaxScaler"
+```
 
 ### Failure Diagnosis
 
