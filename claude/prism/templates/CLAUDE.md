@@ -2,9 +2,17 @@
 
 ## Project: {{name}}
 
-ASP (Agentic Science Protocol) analysis project, built with Prism. Start with `/prism-new` to scope a research question.
+ASP (Agentic Science Protocol) analysis project, built with Prism.
 
-**Skills:** `/prism-new` (scope + literature), `/prism-verify` (verify).
+### Skill Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/prism-new` | Scope question, structure decisions, integrate literature |
+| `/prism-build` | Build loop -- spec to materialized results |
+| `/prism-verify` | Verify results, decision-code alignment, success criteria |
+
+**Workflow:** `/prism-new` --> `/prism-build` --> `/prism-verify`
 
 ### Source of Truth
 
@@ -52,7 +60,9 @@ version: "1.0"
 name: "My Analysis"
 description: "What this analysis investigates."
 success_criteria:
-  - "Achieve >95% accuracy on held-out test set"
+  - claim: "Achieve >95% accuracy on held-out test set"
+    output: accuracy
+    condition: "value > 0.95"
 inputs:
   - id: training_data
     type: data
@@ -66,6 +76,19 @@ decisions:
     options:
       standard: { label: "StandardScaler" }
       minmax: { label: "MinMaxScaler" }
+  use_pca:
+    label: "Use PCA"
+    default: "no"
+    options:
+      "yes": { label: "Yes" }
+      "no": { label: "No" }
+  n_components:
+    label: "PCA Components"
+    when: use_pca.yes             # only exists when use_pca=yes
+    default: "50"
+    options:
+      "50": { label: "50 components" }
+      "100": { label: "100 components" }
 outputs:
   - id: accuracy
     type: metric
@@ -115,6 +138,13 @@ analyses:
 **Every decision must be parameterized in code** -- never hardcode a decision value. Accept all decisions as CLI args.
 
 **Underscore convention:** IDs use underscores in `asp.yaml` (`prior_range`). Prism passes `--prior_range wide`. Scripts must match: `parser.add_argument('--prior_range')`, **not** `--prior-range`.
+
+### Decision Constraints
+
+- `incompatible_with: ["decision.option"]` -- cannot coexist in a universe
+- `requires: ["decision.option"]` -- must be selected together
+- `when: decision.option` -- conditional decision, only exists when that option is selected (see `n_components` example above)
+- `excluded: true` + `excluded_reason: "..."` -- option considered but rejected (cannot be default or selected)
 
 ### Writing Results
 
@@ -212,6 +242,16 @@ insights:
 Link to decisions: `options: { layer_norm: { insights: [layer_norm_stability] } }`
 
 Literature is integrated into `/prism-new` during scoping.
+
+Artifacts (computed outputs) use `artifact:` instead of `doi:`:
+
+```yaml
+evidence:
+  - id: e1
+    artifact: "accuracy"
+    quote:
+      exact: "StandardScaler achieved 97% accuracy vs 91% for MinMaxScaler"
+```
 
 ### Failure Diagnosis
 
