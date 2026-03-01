@@ -43,3 +43,32 @@ def save_target(name: str, config: dict[str, Any]) -> Path:
     with open(config_path, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     return config_path
+
+
+def get_config_path() -> Path:
+    """Return the user-level config file path (~/.prism/config.yaml)."""
+    return Path.home() / ".prism" / "config.yaml"
+
+
+def load_user_config() -> dict[str, Any]:
+    """Load the user-level Prism configuration.
+
+    Returns an empty dict if the config file doesn't exist.
+    """
+    config_path = get_config_path()
+    if not config_path.exists():
+        return {}
+    with open(config_path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def save_user_config(config: dict[str, Any]) -> Path:
+    """Save user-level Prism configuration to ~/.prism/config.yaml.
+
+    Returns the path where it was saved.
+    """
+    config_path = get_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    return config_path
