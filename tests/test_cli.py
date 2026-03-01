@@ -123,19 +123,6 @@ class TestInitCommand:
         config = yaml.safe_load((project_dir / "prism.yaml").read_text())
         assert config["target"] == "perlmutter"
 
-    def test_init_with_target_appends_site_guidance(self, runner: CliRunner, tmp_path: Path):
-        """Test that --target appends site-specific guidance to CLAUDE.md."""
-        project_dir = tmp_path / "guidance-test"
-        result = runner.invoke(
-            main,
-            ["init", str(project_dir), "--no-git", "--no-venv", "--target", "perlmutter"],
-        )
-        assert result.exit_code == 0
-
-        claude_md = (project_dir / "CLAUDE.md").read_text()
-        assert "NERSC Perlmutter" in claude_md
-        assert "podman-hpc" in claude_md
-
     def test_init_without_target_no_prism_yaml(self, runner: CliRunner, tmp_path: Path):
         """Test that without --target, no prism.yaml is created."""
         project_dir = tmp_path / "no-target-test"
@@ -145,19 +132,6 @@ class TestInitCommand:
         )
         assert result.exit_code == 0
         assert not (project_dir / "prism.yaml").exists()
-
-    def test_init_without_target_no_site_guidance(self, runner: CliRunner, tmp_path: Path):
-        """Test that without --target, CLAUDE.md has no site-specific content."""
-        project_dir = tmp_path / "no-guidance-test"
-        result = runner.invoke(
-            main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
-        )
-        assert result.exit_code == 0
-
-        claude_md = (project_dir / "CLAUDE.md").read_text()
-        assert "NERSC Perlmutter" not in claude_md
-
 
 class TestVersionOption:
     """Tests for version option."""

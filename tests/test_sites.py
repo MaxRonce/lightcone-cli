@@ -5,7 +5,6 @@ from prism.dagster.sites import (
     SITE_DEFAULTS,
     detect_site,
     get_site_defaults,
-    get_site_guidance,
     list_known_sites,
 )
 
@@ -60,17 +59,6 @@ class TestGetSiteDefaults:
 
     def test_unknown(self):
         assert get_site_defaults("nonexistent") is None
-
-
-class TestGetSiteGuidance:
-    def test_perlmutter_has_guidance(self):
-        guidance = get_site_guidance("perlmutter")
-        assert guidance is not None
-        assert "Perlmutter" in guidance
-        assert "podman-hpc" in guidance
-
-    def test_unknown(self):
-        assert get_site_guidance("nonexistent") is None
 
 
 class TestListKnownSites:
