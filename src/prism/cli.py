@@ -56,7 +56,8 @@ def main() -> None:
 @click.argument("directory", type=click.Path(path_type=Path), default=".")
 @click.option("--no-git", is_flag=True, help="Don't initialize git repository")
 @click.option("--no-venv", is_flag=True, help="Don't create Python virtual environment")
-def init(directory: Path, no_git: bool, no_venv: bool) -> None:
+@click.option("--target", "-t", default=None, help="Default execution target (e.g., perlmutter)")
+def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> None:
     """Create a new ASP analysis project with full agentic scaffolding.
 
     Creates the project with ASP specification files, Claude Code plugin
@@ -66,8 +67,8 @@ def init(directory: Path, no_git: bool, no_venv: bool) -> None:
 
     Examples:
         prism init my-analysis
-        prism init my-analysis --no-git
-        prism init my-analysis --no-venv
+        prism init my-analysis --target perlmutter
+        prism init my-analysis --no-git --no-venv
     """
     # Check if this is already an ASP project
     if (directory / "asp.yaml").exists():
@@ -124,10 +125,23 @@ __pycache__/
     _create_boilerplate_asp_yaml(directory)
 
     # Create CLAUDE.md with project conventions
-    _create_claude_md(directory)
+    _create_claude_md(directory, target=target)
 
     # Create Claude Code settings with local skills
     _create_claude_settings(directory)
+
+    # Write prism.yaml project config and ensure target is configured
+    if target:
+        _create_prism_config(directory, target)
+
+        # Ensure the target has been set up (has a config in ~/.prism/targets/)
+        from prism.dagster.targets import load_target
+
+        if load_target(target) is None:
+            console.print(
+                f"\n[yellow]Target [cyan]{target}[/cyan] is not configured yet.[/yellow]"
+            )
+            _run_target_setup_wizard(target)
 
     # Create virtual environment
     _create_venv(directory, no_venv)
@@ -137,11 +151,11 @@ __pycache__/
 
     # Print success message
     console.print(f"[green]✓[/green] Created ASP analysis project: [cyan]{directory}[/cyan]")
+    if target:
+        console.print(f"  Default target: [cyan]{target}[/cyan]")
 
-    console.print(f"\n[bold]cd {directory}[/bold], then either:")
-    console.print("  • [cyan]prism run[/cyan] to execute the analysis")
-    console.print("  • [cyan]claude[/cyan] to work from the command line")
-    console.print("\nThen run [cyan]/prism-new[/cyan] to scope your research question.")
+    console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
+    console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
 
 
 def _create_boilerplate_asp_yaml(directory: Path) -> None:
@@ -182,7 +196,7 @@ outputs:
 decisions:
   example_method:
     label: "Example Method Choice"
-    type: method
+    tags: [analysis]
     rationale: "TODO: Explain why this decision matters"
     default: option_a
     options:
@@ -252,6 +266,7 @@ claude
 ## Structure
 
 - `asp.yaml` — Analysis specification (source of truth)
+- `prism.yaml` — Prism config (default target, etc.)
 - `CLAUDE.md` — Build conventions and project context for Claude Code
 - `universes/` — Decision selections (one YAML per universe)
 - `scripts/` — Implementation scripts
@@ -265,7 +280,7 @@ See [Prism documentation](https://github.com/LightconeResearch/Prism) for the ag
     (directory / "README.md").write_text(readme)
 
 
-def _create_claude_md(directory: Path) -> None:
+def _create_claude_md(directory: Path, target: str | None = None) -> None:
     """Create CLAUDE.md from the template in the plugin source."""
     name = directory.name if directory != Path(".") else "My Analysis"
 
@@ -289,6 +304,23 @@ def _create_claude_md(directory: Path) -> None:
         )
 
     (directory / "CLAUDE.md").write_text(content)
+
+
+def _create_prism_config(directory: Path, target: str) -> None:
+    """Create prism.yaml with project-level configuration."""
+    config = {"target": target}
+    (directory / "prism.yaml").write_text(
+        yaml.dump(config, default_flow_style=False, sort_keys=False)
+    )
+    console.print(f"[green]✓[/green] Created prism.yaml (default target: {target})")
+
+
+def _load_prism_config(project_path: Path) -> dict[str, Any]:
+    """Load project-level prism.yaml configuration."""
+    config_path = project_path / "prism.yaml"
+    if config_path.exists():
+        return yaml.safe_load(config_path.read_text()) or {}
+    return {}
 
 
 def _create_claude_settings(directory: Path) -> None:
@@ -360,6 +392,16 @@ def _create_claude_settings(directory: Path) -> None:
                         {
                             "type": "command",
                             "command": ".claude/scripts/validate-on-save.sh",
+                            "timeout": 15,
+                        },
+                    ],
+                },
+                {
+                    "matcher": "Bash",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": ".claude/scripts/check-prism-run.sh",
                             "timeout": 15,
                         },
                     ],
@@ -493,6 +535,11 @@ def run(
     if not (project_path / "asp.yaml").exists():
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
         raise SystemExit(1)
+
+    # Read default target from prism.yaml if not specified on command line
+    if target is None:
+        prism_config = _load_prism_config(project_path)
+        target = prism_config.get("target")
 
     universe_id = universe or "baseline"
     defs = build_definitions(
@@ -788,47 +835,16 @@ def remote() -> None:
     pass
 
 
-@remote.command("setup")
-@click.argument("name", required=False)
-@click.option("--list", "list_targets_flag", is_flag=True, help="List saved targets")
-def remote_setup(name: str | None, list_targets_flag: bool) -> None:
-    """Configure an execution target.
+def _run_target_setup_wizard(name: str) -> Path:
+    """Run the interactive target setup wizard.
 
-    Sets up connection details, scheduler config, and resource limits
-    for remote execution backends (SLURM, etc.).
+    Prompts for connection details, scheduler config, and resource limits.
+    Known HPC sites are auto-detected and pre-filled with defaults.
 
-    Known HPC sites (NERSC Perlmutter, OLCF Frontier, ALCF Polaris, ...)
-    are auto-detected from the target name and pre-filled with sensible
-    defaults.  You can override any value during the wizard.
-
-    Examples:
-        prism remote setup perlmutter
-        prism remote setup --list
+    Returns the path where the target config was saved.
     """
-    from prism.dagster.sites import detect_site, get_site_defaults, list_known_sites
-    from prism.dagster.targets import list_targets, save_target
-
-    if list_targets_flag:
-        saved = list_targets()
-        if not saved:
-            console.print("[dim]No saved targets.[/dim]")
-        else:
-            console.print("[bold]Saved targets:[/bold]")
-            for t in saved:
-                console.print(f"  - {t}")
-
-        known = list_known_sites()
-        console.print(f"\n[bold]Known sites[/bold] (auto-detected defaults):")
-        for key, display in known:
-            console.print(f"  - [cyan]{key}[/cyan]  ({display})")
-        console.print(
-            "\nRun [cyan]prism remote setup <name>[/cyan] to configure a target."
-        )
-        return
-
-    if name is None:
-        console.print("[red]Error:[/red] Provide a target name.")
-        raise SystemExit(1)
+    from prism.dagster.sites import detect_site, get_site_defaults
+    from prism.dagster.targets import save_target
 
     console.print(f"\n[bold]Setting up target: [cyan]{name}[/cyan][/bold]\n")
 
@@ -865,7 +881,6 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
     account = click.prompt("  Account/allocation")
 
     # If the site has named partition presets, let the user pick one.
-    partition_default = "regular"
     constraint_default = ""
     container_flags_default: list[str] = []
     if site_partitions:
@@ -962,7 +977,53 @@ def remote_setup(name: str | None, list_targets_flag: bool) -> None:
         config["site"] = site_key
 
     path = save_target(name, config)
-    console.print(f"\n[green]✓[/green] Saved to [cyan]{path}[/cyan]")
+    console.print(f"\n[green]✓[/green] Saved target config to [cyan]{path}[/cyan]")
+    return path
+
+
+@remote.command("setup")
+@click.argument("name", required=False)
+@click.option("--list", "list_targets_flag", is_flag=True, help="List saved targets")
+def remote_setup(name: str | None, list_targets_flag: bool) -> None:
+    """Configure an execution target.
+
+    Sets up connection details, scheduler config, and resource limits
+    for remote execution backends (SLURM, etc.).
+
+    Known HPC sites (NERSC Perlmutter, OLCF Frontier, ALCF Polaris, ...)
+    are auto-detected from the target name and pre-filled with sensible
+    defaults.  You can override any value during the wizard.
+
+    Examples:
+        prism remote setup perlmutter
+        prism remote setup --list
+    """
+    from prism.dagster.sites import list_known_sites
+    from prism.dagster.targets import list_targets
+
+    if list_targets_flag:
+        saved = list_targets()
+        if not saved:
+            console.print("[dim]No saved targets.[/dim]")
+        else:
+            console.print("[bold]Saved targets:[/bold]")
+            for t in saved:
+                console.print(f"  - {t}")
+
+        known = list_known_sites()
+        console.print(f"\n[bold]Known sites[/bold] (auto-detected defaults):")
+        for key, display in known:
+            console.print(f"  - [cyan]{key}[/cyan]  ({display})")
+        console.print(
+            "\nRun [cyan]prism remote setup <name>[/cyan] to configure a target."
+        )
+        return
+
+    if name is None:
+        console.print("[red]Error:[/red] Provide a target name.")
+        raise SystemExit(1)
+
+    _run_target_setup_wizard(name)
     console.print(f"Use with: [cyan]prism run --target {name}[/cyan]")
 
 

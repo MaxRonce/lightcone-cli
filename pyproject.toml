@@ -20,7 +20,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "asp @ git+https://github.com/LightconeResearch/ASP.git@feat/inline-recipes",
+    "asp @ git+https://github.com/LightconeResearch/ASP.git@main",
     "click>=8.0",
     "pyyaml>=6.0",
     "rich>=13.0",

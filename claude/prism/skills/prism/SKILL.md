@@ -13,16 +13,16 @@ Help users work with the Agentic Science Protocol (ASP) via Prism — a declarat
 | Command | Purpose |
 |---------|---------|
 | `/prism-new` | Create a new analysis — scope question, structure decisions, identify sub-analyses with literature |
-| `/prism-run` | Execute recipes — materialize outputs, monitor status, diagnose failures |
-| `/prism-status` | Quick pipeline status check — what's materialized, what's pending |
+| `/prism-build` | Autonomous build loop — iterate from spec to materialized results |
+| `/prism-verify` | Verify a completed analysis — check results, decision-code alignment, success criteria |
 
 ### Workflow
 
 ```
-/prism-new  →  write & debug  →  integrate recipes  →  /prism-run
+/prism-new  →  /prism-build  →  /prism-verify
 ```
 
-`/prism-new` scopes the research question, structures decisions (and sub-analyses if needed), identifies decision points, and proactively searches for supporting literature. Then start building progressively.
+`/prism-new` scopes the research question, structures decisions, and searches for supporting literature. `/prism-build` autonomously iterates from spec to materialized results (write scripts, integrate recipes, run `prism run`). `/prism-verify` checks the final analysis for correctness.
 
 ## Development Workflow
 
@@ -58,7 +58,7 @@ A simple analysis puts everything at the top level. Complex analyses use `analys
 decisions:
   scaling:
     label: "Feature Scaling"
-    type: method
+    tags: [preprocessing]
     default: standard
     options:
       standard:
@@ -74,7 +74,7 @@ decisions:
 decisions:
   cosmology_model:
     label: "Cosmological Model"
-    type: method
+    tags: [physics]
     default: flat_lcdm
     options:
       flat_lcdm:
@@ -98,7 +98,7 @@ analyses:
     decisions:
       noise_model:
         label: "Noise Model"
-        type: method
+        tags: [simulation]
         default: heteroscedastic
         options:
           homoscedastic:
@@ -123,7 +123,7 @@ analyses:
     decisions:
       architecture:
         label: "Network Architecture"
-        type: method
+        tags: [model_selection]
         default: maf
         options:
           maf:
@@ -225,10 +225,18 @@ Define concrete, verifiable conditions for success:
 description: |
   Build a classifier for the Iris dataset...
 success_criteria:
-  - "Achieve >95% classification accuracy on held-out test set"
-  - "Model size under 10MB for mobile deployment"
-  - "Prediction time under 100ms per sample"
+  - claim: "Achieve >95% classification accuracy on held-out test set"
+    output: accuracy
+    condition: "value > 0.95"
+  - claim: "Model size under 10MB for mobile deployment"
+    output: model_size
+    condition: "value < 10"
+  - claim: "Prediction time under 100ms per sample"
+    output: inference_time
+    condition: "value < 0.1"
 ```
+
+Structured objects linking claims to outputs for automated verification.
 
 ### Universes
 A universe is a complete set of decisions — one option per decision point. For simple analyses, decisions are at the top level. For analyses with sub-analyses, decisions are nested under `analyses:`:
@@ -435,7 +443,7 @@ Decisions live under `decisions:` at the top level (or within a sub-analysis und
 decisions:
   new_decision:
     label: "Human-readable Label"
-    type: method  # or: data, parameter
+    tags: [preprocessing]  # optional: freeform tags for grouping decisions
     rationale: "Why this decision matters"
     default: option_a
     options:

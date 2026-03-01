@@ -49,9 +49,7 @@ fi
 summary="ASP Project: ${analysis_name:-unnamed}
 - Decisions: ${decision_count:-0}
 - Universes: ${universe_count:-0}
-- Validation: ${validation_status}
-
-Use the Prism skill (/prism) for working with this analysis. The skill provides guidance on editing asp.yaml, managing universes, extracting insights from papers, and building analyses."
+- Validation: ${validation_status}"
 
 # If validation failed, add error summary
 if [ "$validation_status" = "has errors" ]; then
@@ -61,6 +59,31 @@ if [ "$validation_status" = "has errors" ]; then
 
 Validation errors (run 'asp validate asp.yaml' for details):
 $error_preview"
+fi
+
+# Add prism status if prism CLI is available
+if command -v prism &> /dev/null; then
+    prism_status=$(prism status 2>&1)
+    prism_exit=$?
+    if [ $prism_exit -eq 0 ]; then
+        # Count outputs in each state
+        pending_count=$(echo "$prism_status" | grep -c "pending")
+        ok_count=$(echo "$prism_status" | grep -c "ok")
+        no_recipe_count=$(echo "$prism_status" | grep -c "no recipe")
+
+        summary="$summary
+
+Materialization status:
+- ok: ${ok_count}
+- pending: ${pending_count}
+- no recipe: ${no_recipe_count}"
+
+        if [ "$pending_count" -gt 0 ]; then
+            summary="$summary
+
+ACTION REQUIRED: ${pending_count} output(s) have recipes but are not yet materialized. Use \`prism run\` to produce them."
+        fi
+    fi
 fi
 
 # Output as JSON

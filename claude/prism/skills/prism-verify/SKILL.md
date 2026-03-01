@@ -20,13 +20,9 @@ Verify a completed ASP analysis. Checks that implementation matches specificatio
 3. Read `CLAUDE.md` for project context
 4. Ask: "Should I also check success criteria against results, or just verify spec-implementation alignment?"
 
-Display banner, then run all checks. Collect findings and present the full report at the end.
+Stage banner: VERIFY — <universe_id>
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► VERIFY — <universe_id>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Run all checks. Collect findings and present the full report at the end.
 
 ---
 
@@ -96,9 +92,9 @@ Be pragmatic — the code may parse option IDs into internal representations (e.
 **Skip if the user opted out during Setup.**
 
 For each success criterion in `asp.yaml`:
-1. If a metric can directly verify it (e.g., "accuracy > 95%" → check `accuracy.json`), do so
-2. If verification requires qualitative judgment, note as "needs manual review"
-3. If no results relate to it, flag as unverifiable
+1. If the criterion has `output` and `condition` fields, read the referenced output's result file and evaluate the condition. Report pass/fail.
+2. If the criterion has only a `claim` (no `output` reference), use judgment: check if any result can verify it. Note "needs manual review" for qualitative criteria.
+3. If no results relate to it, flag as unverifiable.
 
 ---
 
@@ -115,11 +111,7 @@ Only flag things you're reasonably confident about.
 
 ## Report
 
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- PRISM ► VERIFICATION REPORT — <universe_id>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
+Stage banner: VERIFICATION REPORT — <universe_id>
 
 ### Summary Table
 
@@ -154,32 +146,9 @@ List each finding grouped by check:
 
 ### Suggested Fixes
 
-If there are warnings or failures:
+If there are warnings or failures, show an action prompt (see ui-brand.md) titled "SUGGESTED FIXES" with a numbered list of concrete fixes.
 
-```
-───────────────────────────────────────────────────────────────
-→ SUGGESTED FIXES
-───────────────────────────────────────────────────────────────
-
-1. Fix scaling in scripts/preprocess.py:42 to use StandardScaler
-2. Add model_size metric to asp.yaml outputs
-3. Add missing result file: results/baseline/conclusion.md
-───────────────────────────────────────────────────────────────
-```
-
-If everything passes:
-
-```
-───────────────────────────────────────────────────────────────
-
-▶ All checks passed
-
-This analysis is verified for universe `baseline`.
-
-<sub>/clear first → CLAUDE.md has everything needed to pick back up</sub>
-
-───────────────────────────────────────────────────────────────
-```
+If everything passes, show a Next Up block confirming the analysis is verified for this universe.
 
 ---
 

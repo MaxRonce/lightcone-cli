@@ -1,143 +1,54 @@
 # Decision Guide
 
-How to identify and structure decisions in an ASP analysis.
+## E/N/U Classification
 
-## What is a Decision?
+Classify every candidate decision before adding it to the spec.
 
-A decision is a choice point in your analysis where multiple valid options exist. Each choice could lead to different results — this is the "garden of forking paths."
+| Type | Name | In multiverse? | Meaning |
+|------|------|---------------|---------|
+| **E** | Principled Equivalence | **Yes** | Options expected to produce equivalent results. Genuinely arbitrary. |
+| **N** | Principled Nonequivalence | **No** -- fix it | One option is clearly better-justified. Including it dilutes signal. |
+| **U** | Uncertainty | **Yes**, flag it | Reasons to suspect non-equivalence but insufficient evidence to pick a winner. |
 
-**Good decisions to capture:**
-- Algorithm/method choice (SVM vs Random Forest)
-- Prior specification (informative vs weakly informative)
-- Data handling (how to treat missing values)
-- Evaluation strategy (which metrics, what baseline)
+**Flowchart:**
+1. Does literature/domain knowledge clearly favor one option? --> **Type N.** Fix it.
+2. Are the options expected to give similar results? --> **Type E.** Include all.
+3. Neither clear? --> **Type U.** Include, flag for careful interpretation.
 
-**Not decisions:**
-- Fixed requirements ("must use Python") — these are constraints, not choices
-- Implementation details ("use pandas") — these belong in the build phase, not the spec
-- Obvious best practices — only capture choices that could reasonably go either way
+**Type N exception:** If reviewer pushback is likely, fix the better option as default and include the weaker option as a secondary check.
 
-## Decision Types
+**Embed classification in the rationale field,** e.g.: `"Type U -- literature uses both 2.5 and 3 SD cutoffs with no consensus"`
 
-| Type | When to Use | Examples |
-|------|-------------|----------|
-| `method` | Algorithmic/methodological choices | model family, normalization approach, sampling strategy |
-| `data` | Data handling choices | missing value treatment, train/test split, filtering criteria |
-| `parameter` | Numeric/categorical parameters | learning rate, prior width, threshold values |
+---
 
-## Structure
+## Stability Test
 
-```yaml
-decisions:
-  decision_id:           # lowercase_with_underscores
-    label: "Human Name"  # Short, descriptive
-    type: method         # method | data | parameter
-    rationale: "Why this matters for the analysis"
-    default: option_a    # Required — what to use if not specified
-    options:
-      option_a:
-        label: "Option A"
-        description: "What this does and when to use it"
-        insights: []     # References to supporting literature
-      option_b:
-        label: "Option B"
-        description: "Alternative approach"
-```
+A decision matters if changing it changes the conclusion. If all options give qualitatively similar results, the choice is cosmetic -- skip it.
 
-## Identifying Decisions
+---
 
-### From the Research Question
+## Not Decisions
 
-Ask: "What could I do differently that would change the answer?"
+Skip these: fixed requirements (constraints), implementation details (build phase), obvious best practices with no defensible alternative, purely cosmetic choices.
 
-Example: "Estimate cosmological parameters from galaxy surveys"
-- Decisions: likelihood model, prior choice, sampler, summary statistics
+---
 
-### From Domain Knowledge
+## Scoping
 
-Each domain has common decision points:
+A multiverse of trivial decisions is less informative than a focused one.
 
-| Domain | Common Decisions |
-|--------|------------------|
-| ML Classification | model family, feature scaling, train/test split, class imbalance handling |
-| Bayesian Inference | prior specification, sampler choice, convergence criteria |
-| Causal Inference | identification strategy, matching method, sensitivity analysis |
-| SBI/ABC | summary statistics, distance metric, acceptance threshold |
-| Deep Learning | architecture, optimizer, regularization, learning rate schedule |
+| Tier | Criterion |
+|------|-----------|
+| **1 -- Must vary** | Literature/domain knowledge suggests the choice matters. |
+| **2 -- Should vary** | Impact uncertain but plausible. Include if feasible. |
+| **3 -- Could vary** | Impact likely small. Defer unless core multiverse is manageable. |
 
-### From Literature
+---
 
-Papers often compare approaches — these comparisons reveal decision points:
-- "Method A vs Method B" → decision with two options
-- "We found X outperforms Y when Z" → decision with literature support
+## Constraint Patterns
 
-### From User Uncertainty
+Use constraints when decisions are not independent.
 
-When the user says:
-- "I'm not sure whether to..." → decision
-- "It depends on..." → decision
-- "I've seen people do it both ways" → decision
-
-## Decision Priority
-
-Focus on decisions that matter — choices that could change conclusions or significantly affect quality. Don't clutter with trivial decisions (random seed, logging verbosity) unless the user cares.
-
-## Constraints Between Decisions
-
-Some options don't work together or require each other:
-
-```yaml
-options:
-  gpu_training:
-    label: "GPU Training"
-    incompatible_with: ["hardware.cpu_only"]  # Can't combine
-    requires: ["framework.pytorch"]            # Must have this
-```
-
-Constraints reference other decisions in the same analysis (or sub-analysis).
-
-## Common Mistakes
-
-- **Too many decisions** — Not every choice needs to be a decision. Capture the ones that matter.
-- **Too few options** — If there's only one valid option, it's not really a decision.
-- **Vague options** — "Standard approach" vs "Alternative approach" — be specific.
-- **Missing rationale** — Why does this decision matter? What changes if you choose differently?
-- **No default** — Every decision needs a default for universe generation.
-
-## Examples
-
-### Good Decision
-
-```yaml
-prior_width:
-  label: "Prior Width"
-  type: parameter
-  rationale: "Wide priors favor null in Bayes factors; narrow priors assume more prior knowledge"
-  default: weakly_informative
-  options:
-    informative:
-      label: "Informative (σ=0.1)"
-      description: "Strong prior based on previous measurements"
-      insights: [previous_measurement_precision]
-    weakly_informative:
-      label: "Weakly Informative (σ=1)"
-      description: "Regularizing prior that allows data to dominate"
-    diffuse:
-      label: "Diffuse (σ=10)"
-      description: "Nearly flat prior — use with caution"
-```
-
-### Bad Decision
-
-```yaml
-use_pandas:  # Too implementation-focused
-  label: "Use Pandas"
-  type: method
-  options:
-    yes:
-      label: "Yes"
-    no:
-      label: "No"
-```
-
-This isn't a scientific decision — it's an implementation choice for the build phase.
+- **Conditional existence** (`when` on decision) -- downstream decision only exists given an upstream choice. E.g., `svm_kernel` only exists `when: model.svm`.
+- **Incompatibility** (`incompatible_with` on option) -- two options cannot coexist in a universe.
+- **Requirement** (`requires` on option) -- selecting one option forces another.
