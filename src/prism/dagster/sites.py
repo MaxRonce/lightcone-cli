@@ -1,9 +1,8 @@
 """Known HPC site defaults for target configuration.
 
-When ``prism remote setup`` detects a known hostname, it auto-populates
-scheduler settings with site-specific defaults (container runtime,
-partitions, constraints, etc.).  Users can override any value during the
-interactive wizard.
+When ``prism setup`` detects a known site, it auto-populates scheduler
+settings with site-specific defaults (node types, QOS options, container
+runtimes, etc.).  Users can override any value during the wizard.
 
 To add a new site, append an entry to ``SITE_DEFAULTS``.
 """
@@ -23,22 +22,31 @@ SITE_DEFAULTS: dict[str, dict[str, Any]] = {
         },
         "scheduler": {
             "container_runtime": "podman-hpc",
-            "qos": "regular",
         },
-        "partitions": {
+        "node_types": {
             "gpu": {
+                "description": "GPU (A100 40GB) — 1,536 nodes, 4 GPUs/node",
                 "constraint": "gpu",
                 "container_flags": ["--gpu"],
             },
             "gpu_hbm80": {
+                "description": "GPU (A100 80GB) — 256 nodes, 4 GPUs/node",
                 "constraint": "gpu&hbm80g",
                 "container_flags": ["--gpu"],
             },
             "cpu": {
+                "description": "CPU only — 3,072 nodes, 128 cores/node",
                 "constraint": "cpu",
                 "container_flags": [],
             },
         },
+        "qos_options": {
+            "regular": {"description": "Standard priority, max 48h", "default": True},
+            "debug": {"description": "Quick tests, max 30min, 8 nodes max"},
+            "shared": {"description": "Fractional GPU (1-2 GPUs), max 48h"},
+            "preempt": {"description": "0.25x cost, can be preempted after 2h"},
+        },
+        "container_runtimes": ["podman-hpc", "shifter"],
         "resource_limits": {
             "max_nodes": 4,
             "max_walltime_minutes": 360,

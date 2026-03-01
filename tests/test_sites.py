@@ -24,7 +24,6 @@ class TestDetectSite:
         assert detect_site("PERLMUTTER") == "perlmutter"
 
     def test_saul_matches_perlmutter(self):
-        """saul is an alias hostname for perlmutter."""
         assert detect_site("saul.nersc.gov") == "perlmutter"
 
     def test_unknown(self):
@@ -40,22 +39,44 @@ class TestGetSiteDefaults:
         assert site is not None
         assert site["backend"] == "slurm"
         assert site["scheduler"]["container_runtime"] == "podman-hpc"
-        assert "gpu" in site["partitions"]
+        assert "gpu" in site["node_types"]
         assert site["connection"]["hostname"] == "perlmutter.nersc.gov"
 
-    def test_perlmutter_gpu_partition(self):
+    def test_perlmutter_gpu_node_type(self):
         site = get_site_defaults("perlmutter")
         assert site is not None
-        gpu = site["partitions"]["gpu"]
+        gpu = site["node_types"]["gpu"]
         assert gpu["constraint"] == "gpu"
         assert "--gpu" in gpu["container_flags"]
+        assert "description" in gpu
 
-    def test_perlmutter_cpu_partition(self):
+    def test_perlmutter_gpu_hbm80_node_type(self):
         site = get_site_defaults("perlmutter")
         assert site is not None
-        cpu = site["partitions"]["cpu"]
+        gpu80 = site["node_types"]["gpu_hbm80"]
+        assert gpu80["constraint"] == "gpu&hbm80g"
+        assert "--gpu" in gpu80["container_flags"]
+
+    def test_perlmutter_cpu_node_type(self):
+        site = get_site_defaults("perlmutter")
+        assert site is not None
+        cpu = site["node_types"]["cpu"]
         assert cpu["constraint"] == "cpu"
         assert cpu["container_flags"] == []
+
+    def test_perlmutter_qos_options(self):
+        site = get_site_defaults("perlmutter")
+        assert site is not None
+        qos = site["qos_options"]
+        assert "regular" in qos
+        assert "debug" in qos
+        assert qos["regular"].get("default") is True
+
+    def test_perlmutter_container_runtimes(self):
+        site = get_site_defaults("perlmutter")
+        assert site is not None
+        assert "podman-hpc" in site["container_runtimes"]
+        assert "shifter" in site["container_runtimes"]
 
     def test_unknown(self):
         assert get_site_defaults("nonexistent") is None
@@ -82,7 +103,8 @@ class TestSiteDefaultsSchema:
 
     def test_all_sites_have_required_fields(self):
         required = {"hostname_patterns", "backend", "connection", "scheduler",
-                     "partitions", "resource_limits"}
+                     "node_types", "qos_options", "container_runtimes",
+                     "resource_limits"}
         for key, site in SITE_DEFAULTS.items():
             missing = required - set(site.keys())
             assert not missing, f"Site '{key}' missing fields: {missing}"
@@ -92,10 +114,25 @@ class TestSiteDefaultsSchema:
             assert "container_runtime" in site["scheduler"], \
                 f"Site '{key}' missing scheduler.container_runtime"
 
-    def test_all_partitions_have_constraint(self):
+    def test_all_node_types_have_required_fields(self):
         for key, site in SITE_DEFAULTS.items():
-            for pname, pinfo in site["partitions"].items():
-                assert "constraint" in pinfo, \
-                    f"Site '{key}' partition '{pname}' missing constraint"
-                assert "container_flags" in pinfo, \
-                    f"Site '{key}' partition '{pname}' missing container_flags"
+            for nname, ninfo in site["node_types"].items():
+                assert "constraint" in ninfo, \
+                    f"Site '{key}' node_type '{nname}' missing constraint"
+                assert "container_flags" in ninfo, \
+                    f"Site '{key}' node_type '{nname}' missing container_flags"
+                assert "description" in ninfo, \
+                    f"Site '{key}' node_type '{nname}' missing description"
+
+    def test_all_qos_options_have_description(self):
+        for key, site in SITE_DEFAULTS.items():
+            for qname, qinfo in site["qos_options"].items():
+                assert "description" in qinfo, \
+                    f"Site '{key}' qos_option '{qname}' missing description"
+
+    def test_exactly_one_default_qos(self):
+        for key, site in SITE_DEFAULTS.items():
+            defaults = [q for q, info in site["qos_options"].items()
+                        if info.get("default")]
+            assert len(defaults) == 1, \
+                f"Site '{key}' has {len(defaults)} default QOS options (expected 1)"
