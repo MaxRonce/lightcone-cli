@@ -441,6 +441,34 @@ def _init_git_repo(directory: Path, no_git: bool) -> None:
         pass
 
 
+def _get_lightcone_venv_site_packages() -> Path | None:
+    """Read ~/.lightcone/.config to find the Lightcone venv's site-packages."""
+    config_file = Path.home() / ".lightcone" / ".config"
+    if not config_file.exists():
+        return None
+
+    # Parse the simple KEY="VALUE" config file
+    venv_path_str = None
+    for line in config_file.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("VENV_PATH="):
+            venv_path_str = line.split("=", 1)[1].strip().strip('"')
+            break
+
+    if not venv_path_str:
+        return None
+
+    venv_path = Path(venv_path_str)
+    if not venv_path.is_dir():
+        return None
+
+    # Find site-packages inside the Lightcone venv
+    candidates = list(venv_path.glob("lib/python*/site-packages"))
+    if not candidates:
+        candidates = list(venv_path.glob("Lib/site-packages"))  # Windows
+    return candidates[0] if candidates else None
+
+
 def _create_venv(directory: Path, no_venv: bool) -> bool:
     """Create a virtual environment with asp and prism installed."""
     if no_venv:
@@ -450,7 +478,7 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 
     try:
         subprocess.run(
-            [sys.executable, "-m", "venv", str(venv_path)],
+            [sys.executable, "-m", "venv", "--system-site-packages", str(venv_path)],
             capture_output=True,
             check=True,
         )
@@ -460,41 +488,61 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 
     console.print("[green]✓[/green] Created virtual environment (.venv)")
 
-    # Determine pip path
-    if sys.platform == "win32":
-        pip_path = venv_path / "Scripts" / "pip"
-    else:
-        pip_path = venv_path / "bin" / "pip"
+    # --system-site-packages only exposes the *real* system Python's packages.
+    # If Lightcone was installed into its own venv (the common case), we need
+    # to bridge the new project venv to the Lightcone venv's site-packages
+    # via a .pth file.
+    lightcone_sp = _get_lightcone_venv_site_packages()
+    if lightcone_sp:
+        inner_sp_dirs = list(venv_path.glob("lib/python*/site-packages"))
+        if not inner_sp_dirs and sys.platform == "win32":
+            inner_sp_dirs = list(venv_path.glob("Lib/site-packages"))
+        if inner_sp_dirs:
+            pth_file = inner_sp_dirs[0] / "_lightcone.pth"
+            pth_file.write_text(str(lightcone_sp) + "\n")
 
-    # Try to install prism (which pulls in asp as a dependency)
-    lightcone_dir = Path.home() / ".lightcone"
-    env = {**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.1.0"}
+    # Check if prism is now importable in the new venv
+    if sys.platform == "win32":
+        python_path = venv_path / "Scripts" / "python"
+    else:
+        python_path = venv_path / "bin" / "python"
+
     try:
-        if (lightcone_dir / "ASP").is_dir() and (lightcone_dir / "Prism").is_dir():
-            # Use local clones from Lightcone installer
-            install_targets = ["-e", str(lightcone_dir / "ASP")]
-            install_targets += ["-e", str(lightcone_dir / "Prism")]
-            subprocess.run(
-                [str(pip_path), "install", *install_targets],
-                capture_output=True,
-                check=True,
-                env=env,
-            )
-        else:
-            # Fall back to HTTPS clone URLs
-            subprocess.run(
-                [str(pip_path), "install",
-                 "git+https://github.com/LightconeResearch/Prism.git"],
-                capture_output=True,
-                check=True,
-                env=env,
-            )
-        console.print("[green]✓[/green] Installed prism in virtual environment")
-    except subprocess.CalledProcessError:
-        console.print(
-            "[yellow]Warning:[/yellow] Could not install prism automatically. "
-            "You can install manually with: .venv/bin/pip install prism"
+        subprocess.run(
+            [str(python_path), "-c", "import prism"],
+            capture_output=True,
+            check=True,
         )
+        console.print("[green]✓[/green] prism available (via Lightcone environment)")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Not available — install it
+        pip_path = python_path.parent / "pip"
+        lightcone_dir = Path.home() / ".lightcone"
+        env = {**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.1.0"}
+        try:
+            if (lightcone_dir / "ASP").is_dir() and (lightcone_dir / "Prism").is_dir():
+                install_targets = ["-e", str(lightcone_dir / "ASP")]
+                install_targets += ["-e", str(lightcone_dir / "Prism")]
+                subprocess.run(
+                    [str(pip_path), "install", *install_targets],
+                    capture_output=True,
+                    check=True,
+                    env=env,
+                )
+            else:
+                subprocess.run(
+                    [str(pip_path), "install",
+                     "git+https://github.com/LightconeResearch/Prism.git"],
+                    capture_output=True,
+                    check=True,
+                    env=env,
+                )
+            console.print("[green]✓[/green] Installed prism in virtual environment")
+        except subprocess.CalledProcessError:
+            console.print(
+                "[yellow]Warning:[/yellow] Could not install prism automatically. "
+                "You can install manually with: .venv/bin/pip install prism"
+            )
 
     return True
 
