@@ -42,9 +42,21 @@ def _get_plugin_source_dir() -> Path | None:
 
 @click.group()
 @click.version_option()
-def main() -> None:
+@click.pass_context
+def main(ctx: click.Context) -> None:
     """Prism - ASP-compliant Agentic Layer CLI."""
-    pass
+    ctx.ensure_object(dict)
+    if ctx.invoked_subcommand == "setup":
+        return
+    from prism.dagster.targets import get_config_path
+    if not get_config_path().exists():
+        console.print(
+            "\n[bold yellow]No execution environment configured.[/bold yellow]"
+        )
+        console.print(
+            "  Prism needs a default execution target before you can use it.\n"
+        )
+        ctx.invoke(setup)
 
 
 # =============================================================================
@@ -141,7 +153,7 @@ __pycache__/
             console.print(
                 f"\n[yellow]Target [cyan]{target}[/cyan] is not configured yet.[/yellow]"
             )
-            _run_target_setup_wizard(target)
+            _run_setup_wizard(target)
 
     # Create virtual environment
     _create_venv(directory, no_venv)
@@ -825,112 +837,150 @@ def dev(port: int, universe: str) -> None:
 
 
 # =============================================================================
-# Remote target commands (Dagster executor configuration)
+# Setup command
 # =============================================================================
 
 
-@main.group()
-def remote() -> None:
-    """Manage execution targets (Docker, SLURM)."""
-    pass
+def _run_setup_wizard(name: str | None = None) -> Path:
+    """Run the interactive setup wizard.
 
-
-def _run_target_setup_wizard(name: str) -> Path:
-    """Run the interactive target setup wizard.
-
-    Prompts for connection details, scheduler config, and resource limits.
-    Known HPC sites are auto-detected and pre-filled with defaults.
+    Prompts for site selection, node type, QOS, and resource limits.
+    Constraint and container flags are derived automatically from node type.
 
     Returns the path where the target config was saved.
     """
-    from prism.dagster.sites import detect_site, get_site_defaults
-    from prism.dagster.targets import save_target
+    from prism.dagster.sites import get_site_defaults, list_known_sites
+    from prism.dagster.targets import save_target, save_user_config
 
-    console.print(f"\n[bold]Setting up target: [cyan]{name}[/cyan][/bold]\n")
+    console.print("\n[bold]Prism Setup — Default Execution Environment[/bold]")
+    console.print(
+        "  These settings are stored in [cyan]~/.prism/[/cyan] and can be "
+        "overridden per-project.\n"
+    )
 
-    # Try to detect a known site from the target name.
-    site_key = detect_site(name)
+    # --- Site selection ---
+    known = list_known_sites()
+    console.print("  [bold]Known HPC sites:[/bold]")
+    for i, (key, display) in enumerate(known, 1):
+        console.print(f"    {i}. {display}")
+    console.print(f"    {len(known) + 1}. Custom")
+
+    site_choices = [str(i) for i in range(1, len(known) + 2)]
+    site_idx = click.prompt(
+        "\n  Select site",
+        type=click.Choice(site_choices),
+        default="1",
+    )
+    site_idx_int = int(site_idx)
+
     site: dict[str, Any] = {}
-    if site_key:
+    site_key: str | None = None
+    if site_idx_int <= len(known):
+        site_key = known[site_idx_int - 1][0]
         site = get_site_defaults(site_key) or {}
         display = site.get("display_name", site_key)
+        hostname = site.get("connection", {}).get("hostname", "")
         console.print(
-            f"  Detected known site: [cyan]{display}[/cyan] "
-            f"(using site defaults)\n"
+            f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
         )
+    else:
+        # Custom site
+        pass
 
     # --- Connection ---
     site_conn = site.get("connection", {})
-    site_sched = site.get("scheduler", {})
-    site_limits = site.get("resource_limits", {})
-    site_partitions = site.get("partitions", {})
+    if not site_key:
+        hostname = click.prompt("  Hostname", default="")
 
-    backend = click.prompt(
-        "  Backend",
-        type=click.Choice(["slurm", "pbs"]),
-        default=site.get("backend", "slurm"),
-    )
-    hostname = click.prompt(
-        "  Hostname",
-        default=site_conn.get("hostname", ""),
-    )
     username = click.prompt(
         "  Username",
         default=os.environ.get("USER", ""),
     )
     account = click.prompt("  Account/allocation")
 
-    # If the site has named partition presets, let the user pick one.
-    constraint_default = ""
-    container_flags_default: list[str] = []
-    if site_partitions:
-        partition_keys = list(site_partitions.keys())
-        console.print(f"\n  [bold]Available partition presets:[/bold]")
-        for pk in partition_keys:
-            pinfo = site_partitions[pk]
-            desc_parts = []
-            if pinfo.get("constraint"):
-                desc_parts.append(f"constraint={pinfo['constraint']}")
-            if pinfo.get("container_flags"):
-                desc_parts.append(f"flags={' '.join(pinfo['container_flags'])}")
-            desc = ", ".join(desc_parts) if desc_parts else "(no constraints)"
-            console.print(f"    - [cyan]{pk}[/cyan]: {desc}")
+    # --- Node type (auto-derives constraint) ---
+    site_node_types = site.get("node_types", {})
+    constraint = ""
+    container_flags: list[str] = []
+    node_type_key = ""
 
-        partition = click.prompt(
-            "\n  Partition",
-            type=click.Choice(partition_keys + ["custom"]),
-            default=partition_keys[0],
+    if site_node_types:
+        nt_keys = list(site_node_types.keys())
+        console.print("\n  [bold]Node type:[/bold]")
+        for i, ntk in enumerate(nt_keys, 1):
+            ntinfo = site_node_types[ntk]
+            desc = ntinfo.get("description", ntk)
+            console.print(f"    {i}. {desc}")
+
+        nt_choices = [str(i) for i in range(1, len(nt_keys) + 1)]
+        nt_idx = click.prompt(
+            "  Select node type",
+            type=click.Choice(nt_choices),
+            default="1",
         )
-        if partition != "custom" and partition in site_partitions:
-            pinfo = site_partitions[partition]
-            constraint_default = pinfo.get("constraint", "")
-            container_flags_default = pinfo.get("container_flags", [])
-        else:
-            partition = click.prompt("  Custom partition name")
+        nt_idx_int = int(nt_idx)
+        node_type_key = nt_keys[nt_idx_int - 1]
+        ntinfo = site_node_types[node_type_key]
+        constraint = ntinfo["constraint"]
+        container_flags = ntinfo.get("container_flags", [])
+        console.print(f"    [dim]→ Constraint: {constraint}[/dim]")
+        if container_flags:
+            console.print(
+                f"    [dim]→ Container flags: {' '.join(container_flags)}[/dim]"
+            )
     else:
-        partition = click.prompt("  Partition", default="regular")
+        constraint = click.prompt(
+            "  Constraint (e.g., cpu, gpu, gpu&hbm80g)",
+            default="",
+        )
 
-    container_runtime = click.prompt(
-        "  Container runtime",
-        type=click.Choice(["podman-hpc", "shifter", "singularity"]),
-        default=site_sched.get("container_runtime", "podman-hpc"),
-    )
+    # --- QOS ---
+    site_qos = site.get("qos_options", {})
+    if site_qos:
+        qos_keys = list(site_qos.keys())
+        default_qos_idx = "1"
+        for i, qk in enumerate(qos_keys, 1):
+            if site_qos[qk].get("default"):
+                default_qos_idx = str(i)
 
-    qos = click.prompt(
-        "  QOS",
-        default=site_sched.get("qos", "regular"),
-    )
-    constraint = click.prompt(
-        "  Constraint (e.g., cpu, gpu, gpu&hbm80g)",
-        default=constraint_default,
-    )
+        console.print("\n  [bold]QOS:[/bold]")
+        for i, qk in enumerate(qos_keys, 1):
+            desc = site_qos[qk].get("description", "")
+            console.print(f"    {i}. {qk} — {desc}")
 
-    container_flags_str = click.prompt(
-        "  Container flags (e.g., --gpu --mpi --nccl)",
-        default=" ".join(container_flags_default),
-    )
-    container_flags = container_flags_str.split() if container_flags_str.strip() else []
+        qos_choices = [str(i) for i in range(1, len(qos_keys) + 1)]
+        qos_idx = click.prompt(
+            "  Select QOS",
+            type=click.Choice(qos_choices),
+            default=default_qos_idx,
+        )
+        qos = qos_keys[int(qos_idx) - 1]
+    else:
+        qos = click.prompt("  QOS", default="regular")
 
+    # --- Container runtime ---
+    site_runtimes = site.get("container_runtimes", [])
+    if site_runtimes:
+        console.print("\n  [bold]Container runtime:[/bold]")
+        for i, rt in enumerate(site_runtimes, 1):
+            console.print(f"    {i}. {rt}")
+
+        rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
+        rt_idx = click.prompt(
+            "  Select runtime",
+            type=click.Choice(rt_choices),
+            default="1",
+        )
+        container_runtime = site_runtimes[int(rt_idx) - 1]
+    else:
+        container_runtime = click.prompt(
+            "  Container runtime",
+            type=click.Choice(["podman-hpc", "shifter", "singularity"]),
+            default=site.get("scheduler", {}).get("container_runtime", "podman-hpc"),
+        )
+
+    # --- Resource limits ---
+    site_limits = site.get("resource_limits", {})
     console.print("\n  [bold]Resource limits[/bold]")
     max_nodes = click.prompt(
         "    Max nodes per job", type=int,
@@ -944,130 +994,117 @@ def _run_target_setup_wizard(name: str) -> Path:
         "    Max concurrent jobs", type=int,
         default=site_limits.get("max_concurrent_jobs", 8),
     )
-    max_node_hours = click.prompt(
-        "    Max node-hours per session", type=int,
-        default=site_limits.get("max_node_hours_per_session", 32),
+
+    # --- Target name ---
+    default_name = name or site_key or "default"
+    target_name = click.prompt(
+        "\n  Target name",
+        default=default_name,
     )
 
+    # --- Build and save config ---
     scheduler_config: dict[str, Any] = {
         "account": account,
-        "partition": partition,
+        "node_type": node_type_key or "custom",
+        "constraint": constraint,
+        "qos": qos,
         "container_runtime": container_runtime,
     }
-    if qos:
-        scheduler_config["qos"] = qos
-    if constraint:
-        scheduler_config["constraint"] = constraint
     if container_flags:
         scheduler_config["container_flags"] = container_flags
 
     config: dict[str, Any] = {
-        "name": name,
-        "backend": backend,
-        "connection": {"hostname": hostname, "username": username},
+        "name": target_name,
+        "backend": site.get("backend", "slurm"),
+        "connection": {
+            "hostname": site_conn.get("hostname", hostname),
+            "username": username,
+        },
         "scheduler": scheduler_config,
         "resource_limits": {
             "max_nodes": max_nodes,
             "max_walltime_minutes": max_walltime,
             "max_concurrent_jobs": max_concurrent,
-            "max_node_hours_per_session": max_node_hours,
         },
     }
     if site_key:
         config["site"] = site_key
 
-    path = save_target(name, config)
-    console.print(f"\n[green]✓[/green] Saved target config to [cyan]{path}[/cyan]")
+    path = save_target(target_name, config)
+    console.print(f"\n  [green]✓[/green] Saved target: [cyan]{path}[/cyan]")
+
+    # Set as default
+    save_user_config({"default_target": target_name})
+    console.print(
+        f"  [green]✓[/green] Set as default target in "
+        f"[cyan]~/.prism/config.yaml[/cyan]"
+    )
+    console.print(
+        "\n  To override per-project, add to [cyan]prism.yaml[/cyan]:"
+    )
+    console.print("    [dim]target: <other-target-name>[/dim]\n")
+
     return path
 
 
-@remote.command("setup")
+@main.command()
 @click.argument("name", required=False)
-@click.option("--list", "list_targets_flag", is_flag=True, help="List saved targets")
-def remote_setup(name: str | None, list_targets_flag: bool) -> None:
-    """Configure an execution target.
+@click.option("--list", "list_flag", is_flag=True, help="List saved targets")
+@click.option("--show", "show_name", default=None, help="Show a target's config")
+def setup(name: str | None, list_flag: bool, show_name: str | None) -> None:
+    """Set up or manage execution environments.
 
-    Sets up connection details, scheduler config, and resource limits
-    for remote execution backends (SLURM, etc.).
+    Configures connection details, node type, QOS, and resource limits
+    for remote execution backends (SLURM). Constraint and container flags
+    are derived automatically from the chosen node type.
 
-    Known HPC sites (NERSC Perlmutter, OLCF Frontier, ALCF Polaris, ...)
-    are auto-detected from the target name and pre-filled with sensible
-    defaults.  You can override any value during the wizard.
+    Settings are stored at the user level (~/.prism/) and can be overridden
+    per-project via prism.yaml.
+
+    Known HPC sites (NERSC Perlmutter, etc.) are auto-detected and
+    pre-filled with sensible defaults.
 
     Examples:
-        prism remote setup perlmutter
-        prism remote setup --list
+        prism setup                   # interactive wizard
+        prism setup perlmutter        # configure a named target
+        prism setup --list            # list saved targets
+        prism setup --show perlmutter # show a target's config
     """
     from prism.dagster.sites import list_known_sites
-    from prism.dagster.targets import list_targets
+    from prism.dagster.targets import list_targets, load_target, load_user_config
 
-    if list_targets_flag:
+    if show_name:
+        config = load_target(show_name)
+        if config is None:
+            console.print(f"[red]Error:[/red] No saved target '{show_name}'.")
+            raise SystemExit(1)
+        console.print(f"[bold]Target: {show_name}[/bold]\n")
+        console.print(yaml.dump(config, default_flow_style=False, sort_keys=False))
+        return
+
+    if list_flag:
         saved = list_targets()
+        user_config = load_user_config()
+        default = user_config.get("default_target", "")
+
         if not saved:
             console.print("[dim]No saved targets.[/dim]")
         else:
             console.print("[bold]Saved targets:[/bold]")
             for t in saved:
-                console.print(f"  - {t}")
+                marker = " [green](default)[/green]" if t == default else ""
+                console.print(f"  - {t}{marker}")
 
         known = list_known_sites()
         console.print(f"\n[bold]Known sites[/bold] (auto-detected defaults):")
         for key, display in known:
             console.print(f"  - [cyan]{key}[/cyan]  ({display})")
         console.print(
-            "\nRun [cyan]prism remote setup <name>[/cyan] to configure a target."
+            "\nRun [cyan]prism setup <name>[/cyan] to configure a target."
         )
         return
 
-    if name is None:
-        console.print("[red]Error:[/red] Provide a target name.")
-        raise SystemExit(1)
-
-    _run_target_setup_wizard(name)
-    console.print(f"Use with: [cyan]prism run --target {name}[/cyan]")
-
-
-@remote.command("show")
-@click.argument("name")
-def remote_show(name: str) -> None:
-    """Show a saved target configuration."""
-    from prism.dagster.targets import load_target
-
-    config = load_target(name)
-    if config is None:
-        console.print(f"[red]Error:[/red] No saved target '{name}'.")
-        raise SystemExit(1)
-
-    console.print(f"[bold]Target: {name}[/bold]\n")
-    console.print(yaml.dump(config, default_flow_style=False, sort_keys=False))
-
-
-@remote.command("edit")
-@click.argument("name")
-def remote_edit(name: str) -> None:
-    """Open a saved target configuration in your editor.
-
-    Uses $EDITOR (or vi) to edit the target YAML file.
-
-    Examples:
-        prism remote edit perlmutter
-    """
-    from prism.dagster.targets import get_targets_dir, load_target
-
-    if load_target(name) is None:
-        console.print(f"[red]Error:[/red] No saved target '{name}'.")
-        console.print(f"Run [cyan]prism remote setup {name}[/cyan] to create one.")
-        raise SystemExit(1)
-
-    target_file = get_targets_dir() / f"{name}.yaml"
-    editor = os.environ.get("EDITOR", "vi")
-    try:
-        subprocess.run([editor, str(target_file)], check=True)
-        console.print(f"[green]✓[/green] Target '{name}' updated.")
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        console.print(f"[red]Error:[/red] Could not open editor: {e}")
-        console.print(f"Edit manually: [cyan]{target_file}[/cyan]")
-        raise SystemExit(1)
+    _run_setup_wizard(name)
 
 
 if __name__ == "__main__":
