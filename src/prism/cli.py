@@ -1135,9 +1135,9 @@ def add(name: str) -> None:
 def _run_setup_wizard(name: str | None = None) -> Path:
     """Run the interactive setup wizard.
 
-    Prompts for site selection, node type, QOS, container runtime,
-    and default resources. Constraint and container flags are derived
-    automatically from node type.
+    Prompts for site selection, username, account, and container runtime.
+    Compute defaults (node type, QOS, nodes, time limit) are populated
+    automatically from the site's safe defaults — those belong in profiles.
 
     Returns the path where the site config was saved.
     """
@@ -1147,7 +1147,7 @@ def _run_setup_wizard(name: str | None = None) -> Path:
     console.print("\n[bold]Prism Setup — Site Configuration[/bold]")
     console.print(
         "  These settings are stored in [cyan]~/.prism/[/cyan] and can be "
-        "overridden per-project.\n"
+        "overridden per-project via compute profiles.\n"
     )
 
     # --- Site selection ---
@@ -1181,85 +1181,33 @@ def _run_setup_wizard(name: str | None = None) -> Path:
     )
     account = click.prompt("  Account/allocation")
 
-    # --- Node type (auto-derives constraint) ---
-    site_node_types = site.get("node_types", {})
-    constraint = ""
-    container_flags: list[str] = []
-    node_type_key = ""
-
-    nt_keys = list(site_node_types.keys())
-    console.print("\n  [bold]Node type:[/bold]")
-    for i, ntk in enumerate(nt_keys, 1):
-        ntinfo = site_node_types[ntk]
-        desc = ntinfo.get("description", ntk)
-        console.print(f"    {i}. {desc}")
-
-    nt_choices = [str(i) for i in range(1, len(nt_keys) + 1)]
-    nt_idx = click.prompt(
-        "  Select node type",
-        type=click.Choice(nt_choices),
-        default="1",
-    )
-    nt_idx_int = int(nt_idx)
-    node_type_key = nt_keys[nt_idx_int - 1]
-    ntinfo = site_node_types[node_type_key]
-    constraint = ntinfo["constraint"]
-    container_flags = ntinfo.get("container_flags", [])
-    console.print(f"    [dim]→ Constraint: {constraint}[/dim]")
-    if container_flags:
-        console.print(
-            f"    [dim]→ Container flags: {' '.join(container_flags)}[/dim]"
-        )
-
-    # --- QOS ---
-    site_qos = site.get("qos_options", {})
-    qos_keys = list(site_qos.keys())
-    default_qos_idx = "1"
-    for i, qk in enumerate(qos_keys, 1):
-        if site_qos[qk].get("default"):
-            default_qos_idx = str(i)
-
-    console.print("\n  [bold]QOS:[/bold]")
-    for i, qk in enumerate(qos_keys, 1):
-        desc = site_qos[qk].get("description", "")
-        console.print(f"    {i}. {qk} — {desc}")
-
-    qos_choices = [str(i) for i in range(1, len(qos_keys) + 1)]
-    qos_idx = click.prompt(
-        "  Select QOS",
-        type=click.Choice(qos_choices),
-        default=default_qos_idx,
-    )
-    qos = qos_keys[int(qos_idx) - 1]
-
     # --- Container runtime ---
     site_runtimes = site.get("container_runtimes", [])
-    console.print("\n  [bold]Container runtime:[/bold]")
-    for i, rt in enumerate(site_runtimes, 1):
-        console.print(f"    {i}. {rt}")
+    if len(site_runtimes) > 1:
+        console.print("\n  [bold]Container runtime:[/bold]")
+        for i, rt in enumerate(site_runtimes, 1):
+            console.print(f"    {i}. {rt}")
 
-    rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
-    rt_idx = click.prompt(
-        "  Select runtime",
-        type=click.Choice(rt_choices),
-        default="1",
-    )
-    container_runtime = site_runtimes[int(rt_idx) - 1]
-
-    # --- Default resources ---
-    console.print("\n  [bold]Default resources[/bold]")
-    default_nodes = click.prompt(
-        "    Nodes", type=int, default=1,
-    )
-    default_time_limit = click.prompt(
-        "    Time limit (e.g., 30m, 2h)", default="30m",
-    )
+        rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
+        rt_idx = click.prompt(
+            "  Select runtime",
+            type=click.Choice(rt_choices),
+            default="1",
+        )
+        container_runtime = site_runtimes[int(rt_idx) - 1]
+    elif site_runtimes:
+        container_runtime = site_runtimes[0]
+    else:
+        container_runtime = site.get(
+            "scheduler", {},
+        ).get("container_runtime", "docker")
 
     # --- Site name ---
     default_name = name or site_key or "default"
     site_name = click.prompt("\n  Site name", default=default_name)
 
     # --- Build and save config ---
+    safe = site.get("safe_defaults", {})
     config: dict[str, Any] = {
         "site": site_key,
         "backend": site.get("backend", "slurm"),
@@ -1269,13 +1217,7 @@ def _run_setup_wizard(name: str | None = None) -> Path:
         },
         "account": account,
         "container_runtime": container_runtime,
-        "defaults": {
-            "node_type": node_type_key,
-            "constraint": constraint,
-            "qos": qos,
-            "nodes": default_nodes,
-            "time_limit": default_time_limit,
-        },
+        "defaults": safe,
     }
 
     path = save_site(site_name, config)
@@ -1310,10 +1252,10 @@ def setup(
 ) -> None:
     """Set up or manage site configurations.
 
-    Configures connection details, node type, QOS, container runtime,
-    and default resources for remote execution backends (SLURM).
-    Constraint and container flags are derived automatically from the
-    chosen node type.
+    Configures connection details and container runtime for remote
+    execution backends (SLURM). Compute settings (node type, QOS,
+    nodes, time limit) are populated from safe site defaults and
+    can be customized per-project via ``prism profiles add``.
 
     Settings are stored at the user level (~/.prism/sites/) and
     referenced by compute profiles in prism.yaml.

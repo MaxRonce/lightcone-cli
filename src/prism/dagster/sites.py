@@ -53,6 +53,13 @@ SITE_DEFAULTS: dict[str, dict[str, Any]] = {
             "max_concurrent_jobs": 8,
             "max_node_hours_per_session": 64,
         },
+        "safe_defaults": {
+            "node_type": "gpu",
+            "constraint": "gpu",
+            "qos": "debug",
+            "nodes": 1,
+            "time_limit": "30m",
+        },
     },
     "local": {
         "hostname_patterns": [],

@@ -229,22 +229,21 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        # Simulate wizard input: site=1(perlmutter), username=testuser,
-        # account=m1234, node_type=1(gpu), qos=1(regular),
-        # runtime=1(podman-hpc), nodes=1, time_limit=30m,
-        # site_name=perlmutter
-        input_lines = "1\ntestuser\nm1234\n1\n1\n1\n1\n30m\nperlmutter\n"
+        # Wizard input: site=1(perlmutter), username=testuser,
+        # account=m1234, runtime=1(podman-hpc), site_name=perlmutter
+        input_lines = "1\ntestuser\nm1234\n1\nperlmutter\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
         assert "Saved site" in result.output
         assert (sites_dir / "perlmutter.yaml").exists()
         assert (tmp_path / "config.yaml").exists()
 
-        # Verify constraint was auto-derived
+        # Verify safe defaults were auto-populated
         import yaml
         site = yaml.safe_load((sites_dir / "perlmutter.yaml").read_text())
         assert site["defaults"]["constraint"] == "gpu"
-        assert site["defaults"]["node_type"] == "gpu"
+        assert site["defaults"]["qos"] == "debug"
+        assert site["defaults"]["nodes"] == 1
 
     def test_setup_wizard_sets_default(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         """Test that wizard sets the default_site in config.yaml."""
@@ -255,7 +254,8 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        input_lines = "1\ntestuser\nm1234\n1\n1\n1\n1\n30m\nmypm\n"
+        # site=1, username, account, runtime=1, site_name=mypm
+        input_lines = "1\ntestuser\nm1234\n1\nmypm\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 
