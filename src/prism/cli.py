@@ -16,6 +16,42 @@ from rich.console import Console
 
 console = Console()
 
+PERMISSION_TIERS = {
+    "yolo": {
+        "allow": [
+            "Bash(*)",
+            "Edit",
+            "Read",
+            "Write",
+            "WebSearch",
+            "WebFetch",
+            "mcp__*",
+        ],
+    },
+    "recommended": {
+        "allow": [
+            "Bash(asp:*)",
+            "Bash(prism:*)",
+            "Bash(python:*)",
+            "Bash(pip:*)",
+            "Bash(git status:*)",
+            "Bash(git log:*)",
+            "Bash(git diff:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git branch:*)",
+            "Bash(git checkout:*)",
+            "Bash(git switch:*)",
+            "Edit",
+            "WebSearch",
+            "WebFetch",
+        ],
+    },
+    "minimal": {
+        "allow": ["Read"],
+    },
+}
+
 
 def _get_plugin_source_dir() -> Path | None:
     """Find the Prism plugin source directory.
@@ -57,7 +93,13 @@ def main() -> None:
 @click.option("--no-git", is_flag=True, help="Don't initialize git repository")
 @click.option("--no-venv", is_flag=True, help="Don't create Python virtual environment")
 @click.option("--target", "-t", default=None, help="Default execution target (e.g., perlmutter)")
-def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> None:
+@click.option(
+    "--permissions",
+    type=click.Choice(["yolo", "recommended", "minimal", "custom"]),
+    default=None,
+    help="Claude Code permission tier (default: prompt or saved default)",
+)
+def init(directory: Path, no_git: bool, no_venv: bool, target: str | None, permissions: str | None) -> None:
     """Create a new ASP analysis project with full agentic scaffolding.
 
     Creates the project with ASP specification files, Claude Code plugin
@@ -127,8 +169,9 @@ __pycache__/
     # Create CLAUDE.md with project conventions
     _create_claude_md(directory, target=target)
 
-    # Create Claude Code settings with local skills
-    _create_claude_settings(directory)
+    # Resolve permission tier and create Claude Code settings
+    tier = _resolve_permission_tier(permissions)
+    _create_claude_settings(directory, tier)
 
     # Write prism.yaml project config and ensure target is configured
     if target:
@@ -323,7 +366,83 @@ def _load_prism_config(project_path: Path) -> dict[str, Any]:
     return {}
 
 
-def _create_claude_settings(directory: Path) -> None:
+def _get_global_config_path() -> Path:
+    """Return the path to the global Prism config file (~/.prism/config.yaml)."""
+    return Path.home() / ".prism" / "config.yaml"
+
+
+def _load_global_config() -> dict[str, Any]:
+    """Load the global Prism config. Returns {} if absent."""
+    config_path = _get_global_config_path()
+    if not config_path.exists():
+        return {}
+    with open(config_path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _save_global_config(config: dict[str, Any]) -> None:
+    """Save the global Prism config, creating ~/.prism/ if needed."""
+    config_path = _get_global_config_path()
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+
+def _prompt_permission_tier() -> str:
+    """Interactively prompt the user to choose a permission tier.
+
+    Returns one of: 'yolo', 'recommended', 'minimal', 'custom'.
+    Optionally saves the choice as the default for future projects.
+    """
+    console.print("\n[bold]Claude Code permission level[/bold]")
+    console.print("Controls what Claude can do without asking.\n")
+    console.print("  1) yolo — Everything auto-allowed. No prompts.")
+    console.print("  2) recommended — Prism workflow auto-allowed. Prompts for the rest.")
+    console.print("  3) minimal — Only file reading. Everything else prompts.")
+    console.print("  4) custom — Start from recommended, edit settings.json yourself.\n")
+
+    choice_map = {"1": "yolo", "2": "recommended", "3": "minimal", "4": "custom"}
+    raw = click.prompt("Choose [1/2/3/4]", default="2").strip()
+    tier = choice_map.get(raw, "recommended")
+
+    save = click.confirm(
+        f"Save '{tier}' as your default for future projects?",
+        default=True,
+    )
+    if save:
+        global_config = _load_global_config()
+        global_config["default_permission_tier"] = tier
+        _save_global_config(global_config)
+        console.print(f"  Saved to {_get_global_config_path()}")
+
+    return tier
+
+
+def _resolve_permission_tier(flag_value: str | None) -> str:
+    """Resolve which permission tier to use.
+
+    Priority:
+    1. --permissions flag (explicit override)
+    2. Saved default in ~/.prism/config.yaml
+    3. Interactive prompt (first time only)
+    """
+    # 1. Explicit flag
+    if flag_value is not None:
+        console.print(f"  Permissions: [cyan]{flag_value}[/cyan] (--permissions flag)")
+        return flag_value
+
+    # 2. Saved default
+    global_config = _load_global_config()
+    saved = global_config.get("default_permission_tier")
+    if saved:
+        console.print(f"  Permissions: [cyan]{saved}[/cyan] (saved default)")
+        return saved
+
+    # 3. Interactive prompt
+    return _prompt_permission_tier()
+
+
+def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
     """Create Claude Code settings with Prism skills and agents."""
     claude_dir = directory / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
@@ -356,18 +475,13 @@ def _create_claude_settings(directory: Path) -> None:
             shutil.rmtree(skills_dst)
         shutil.copytree(skills_src, skills_dst)
 
+    # Look up permissions for the chosen tier (custom starts from recommended)
+    lookup = tier if tier != "custom" else "recommended"
+    permissions = PERMISSION_TIERS[lookup]
+
     # Create settings.json with hooks configured directly
     settings: dict[str, Any] = {
-        "permissions": {
-            "allow": [
-                "Bash(asp:*)",
-                "Bash(prism:*)",
-                "Bash(python:*)",
-                "Edit",
-                "WebSearch",
-                "WebFetch",
-            ],
-        },
+        "permissions": permissions,
         "hooks": {
             "SessionStart": [
                 {
@@ -412,6 +526,12 @@ def _create_claude_settings(directory: Path) -> None:
 
     settings_file = claude_dir / "settings.json"
     settings_file.write_text(json.dumps(settings, indent=2) + "\n")
+
+    if tier == "custom":
+        console.print(
+            f"  [yellow]Custom:[/yellow] Edit [cyan]{settings_file}[/cyan] "
+            "to adjust permissions."
+        )
 
 
 def _init_git_repo(directory: Path, no_git: bool) -> None:
