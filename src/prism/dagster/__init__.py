@@ -13,7 +13,7 @@ from prism.dagster.runner import (
     translate_resources_to_slurm_directives,
 )
 from prism.dagster.status import get_all_universe_status, get_output_status
-from prism.dagster.targets import list_targets, load_target, save_target
+from prism.dagster.targets import list_sites, load_site, save_site
 
 __all__ = [
     "ASPContainerRunner",
@@ -23,9 +23,9 @@ __all__ = [
     "generate_sbatch_script",
     "get_output_status",
     "get_all_universe_status",
-    "list_targets",
-    "load_target",
-    "save_target",
+    "list_sites",
+    "load_site",
+    "save_site",
     "translate_resources_to_slurm_directives",
 ]
 

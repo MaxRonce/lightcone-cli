@@ -19,7 +19,7 @@ def _fake_config(tmp_path, monkeypatch):
     """
     config_path = tmp_path / "prism_cfg" / "config.yaml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text("default_target: fake\n")
+    config_path.write_text("default_site: fake\n")
     monkeypatch.setattr(
         "prism.dagster.targets.get_config_path", lambda: config_path
     )

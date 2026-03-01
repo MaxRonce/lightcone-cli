@@ -278,7 +278,7 @@ claude
 ## Structure
 
 - `asp.yaml` — Analysis specification (source of truth)
-- `prism.yaml` — Prism config (default target, etc.)
+- `prism.yaml` — Prism config (compute profiles)
 - `CLAUDE.md` — Build conventions and project context for Claude Code
 - `universes/` — Decision selections (one YAML per universe)
 - `scripts/` — Implementation scripts
@@ -627,7 +627,7 @@ def build(force: bool, runtime: str) -> None:
     Images are content-addressed — rebuilds only happen when the
     Containerfile or dependency files change.
 
-    For NERSC targets, use --runtime to build with podman-hpc (which
+    For NERSC sites, use --runtime to build with podman-hpc (which
     also migrates images for compute nodes) or pull pre-built images
     with shifter.
 

@@ -1,4 +1,4 @@
-"""Known HPC site defaults for target configuration.
+"""Known HPC site defaults for site configuration.
 
 When ``prism setup`` detects a known site, it auto-populates scheduler
 settings with site-specific defaults (node types, QOS options, container
@@ -69,7 +69,7 @@ SITE_DEFAULTS: dict[str, dict[str, Any]] = {
 
 
 def detect_site(hostname_or_name: str) -> str | None:
-    """Detect a known HPC site from a hostname or target name.
+    """Detect a known HPC site from a hostname or site name.
 
     Returns the site key (e.g. ``"perlmutter"``) or ``None`` if no match.
     """
