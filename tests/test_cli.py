@@ -23,7 +23,7 @@ class TestInitCommand:
         project_dir = tmp_path / "my-analysis"
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
+            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
         )
         assert result.exit_code == 0
         assert "Created ASP analysis project" in result.output
@@ -41,7 +41,7 @@ class TestInitCommand:
         project_dir = tmp_path / "content-test"
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
+            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
         )
         assert result.exit_code == 0
 
@@ -57,7 +57,7 @@ class TestInitCommand:
         project_dir = tmp_path / "gitignore-test"
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
+            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
         )
         assert result.exit_code == 0
 
@@ -68,10 +68,16 @@ class TestInitCommand:
     def test_init_refuses_if_asp_yaml_exists(self, runner: CliRunner, tmp_path: Path):
         """Test that init refuses to run in an existing ASP project."""
         project_dir = tmp_path / "already-init"
-        runner.invoke(main, ["init", str(project_dir), "--no-git", "--no-venv"])
+        runner.invoke(main, [
+            "init", str(project_dir), "--no-git", "--no-venv",
+            "--permissions", "recommended",
+        ])
         assert (project_dir / "asp.yaml").exists()
 
-        result = runner.invoke(main, ["init", str(project_dir), "--no-git", "--no-venv"])
+        result = runner.invoke(main, [
+            "init", str(project_dir), "--no-git", "--no-venv",
+            "--permissions", "recommended",
+        ])
         assert result.exit_code == 1
         assert "already an ASP project" in result.output
 
@@ -83,7 +89,7 @@ class TestInitCommand:
 
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
+            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
             input="n\n",
         )
         assert result.exit_code == 0
@@ -97,7 +103,7 @@ class TestInitCommand:
 
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
+            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
             input="y\n",
         )
         assert result.exit_code == 0
@@ -106,7 +112,11 @@ class TestInitCommand:
     def test_init_creates_dagster_yaml(self, runner: CliRunner, tmp_path: Path):
         """Test that init creates dagster.yaml."""
         project_dir = tmp_path / "dagster-test"
-        result = runner.invoke(main, ["init", str(project_dir), "--no-git", "--no-venv"])
+        result = runner.invoke(
+            main,
+            ["init", str(project_dir), "--no-git", "--no-venv",
+             "--permissions", "recommended"],
+        )
         assert result.exit_code == 0
         assert (project_dir / "dagster.yaml").exists()
 
@@ -116,7 +126,9 @@ class TestInitCommand:
         with patch("prism.dagster.targets.load_site", return_value={"site": "perlmutter"}):
             result = runner.invoke(
                 main,
-                ["init", str(project_dir), "--no-git", "--no-venv", "--site", "perlmutter"],
+                ["init", str(project_dir), "--no-git", "--no-venv",
+                 "--site", "perlmutter",
+                 "--permissions", "recommended"],
             )
         assert result.exit_code == 0
         assert (project_dir / "prism.yaml").exists()
@@ -130,7 +142,7 @@ class TestInitCommand:
         project_dir = tmp_path / "no-site-test"
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv"],
+            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
         )
         assert result.exit_code == 0
         assert not (project_dir / "prism.yaml").exists()
@@ -332,7 +344,11 @@ class TestAutoTrigger:
         config_path.write_text("default_site: perlmutter\n")
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
-        result = runner.invoke(main, ["init", str(tmp_path / "proj"), "--no-git", "--no-venv"])
+        result = runner.invoke(
+            main,
+            ["init", str(tmp_path / "proj"), "--no-git", "--no-venv",
+             "--permissions", "recommended"],
+        )
         assert result.exit_code == 0
         assert "Created ASP analysis project" in result.output
 

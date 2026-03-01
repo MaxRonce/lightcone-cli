@@ -16,6 +16,42 @@ from rich.console import Console
 
 console = Console()
 
+PERMISSION_TIERS = {
+    "yolo": {
+        "allow": [
+            "Bash(*)",
+            "Edit",
+            "Read",
+            "Write",
+            "WebSearch",
+            "WebFetch",
+            "mcp__*",
+        ],
+    },
+    "recommended": {
+        "allow": [
+            "Bash(asp:*)",
+            "Bash(prism:*)",
+            "Bash(python:*)",
+            "Bash(pip:*)",
+            "Bash(git status:*)",
+            "Bash(git log:*)",
+            "Bash(git diff:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git branch:*)",
+            "Bash(git checkout:*)",
+            "Bash(git switch:*)",
+            "Edit",
+            "WebSearch",
+            "WebFetch",
+        ],
+    },
+    "minimal": {
+        "allow": ["Read"],
+    },
+}
+
 
 def _get_plugin_source_dir() -> Path | None:
     """Find the Prism plugin source directory.
@@ -69,7 +105,16 @@ def main(ctx: click.Context) -> None:
 @click.option("--no-git", is_flag=True, help="Don't initialize git repository")
 @click.option("--no-venv", is_flag=True, help="Don't create Python virtual environment")
 @click.option("--site", "-s", default=None, help="Site for default compute profile")
-def init(directory: Path, no_git: bool, no_venv: bool, site: str | None) -> None:
+@click.option(
+    "--permissions",
+    type=click.Choice(["yolo", "recommended", "minimal", "custom"]),
+    default=None,
+    help="Claude Code permission tier (default: prompt or saved default)",
+)
+def init(
+    directory: Path, no_git: bool, no_venv: bool,
+    site: str | None, permissions: str | None,
+) -> None:
     """Create a new ASP analysis project with full agentic scaffolding.
 
     Creates the project with ASP specification files, Claude Code plugin
@@ -139,8 +184,9 @@ __pycache__/
     # Create CLAUDE.md with project conventions
     _create_claude_md(directory)
 
-    # Create Claude Code settings with local skills
-    _create_claude_settings(directory)
+    # Resolve permission tier and create Claude Code settings
+    tier = _resolve_permission_tier(permissions)
+    _create_claude_settings(directory, tier)
 
     # Write prism.yaml project config and ensure site is configured
     if site:
@@ -333,7 +379,64 @@ def _create_prism_config(directory: Path, site_name: str) -> None:
     console.print(f"[green]✓[/green] Created prism.yaml (default site: {site_name})")
 
 
-def _create_claude_settings(directory: Path) -> None:
+
+def _prompt_permission_tier() -> str:
+    """Interactively prompt the user to choose a permission tier.
+
+    Returns one of: 'yolo', 'recommended', 'minimal', 'custom'.
+    Optionally saves the choice as the default for future projects.
+    """
+    console.print("\n[bold]Claude Code permission level[/bold]")
+    console.print("Controls what Claude can do without asking.\n")
+    console.print("  1) yolo — Everything auto-allowed. No prompts.")
+    console.print("  2) recommended — Prism workflow auto-allowed. Prompts for the rest.")
+    console.print("  3) minimal — Only file reading. Everything else prompts.")
+    console.print("  4) custom — Start from recommended, edit settings.json yourself.\n")
+
+    choice_map = {"1": "yolo", "2": "recommended", "3": "minimal", "4": "custom"}
+    raw = click.prompt("Choose [1/2/3/4]", default="2").strip()
+    tier = choice_map.get(raw, "recommended")
+
+    save = click.confirm(
+        f"Save '{tier}' as your default for future projects?",
+        default=True,
+    )
+    if save:
+        from prism.dagster.targets import get_config_path, load_user_config, save_user_config
+        global_config = load_user_config()
+        global_config["default_permission_tier"] = tier
+        save_user_config(global_config)
+        console.print(f"  Saved to {get_config_path()}")
+
+    return tier
+
+
+def _resolve_permission_tier(flag_value: str | None) -> str:
+    """Resolve which permission tier to use.
+
+    Priority:
+    1. --permissions flag (explicit override)
+    2. Saved default in ~/.prism/config.yaml
+    3. Interactive prompt (first time only)
+    """
+    # 1. Explicit flag
+    if flag_value is not None:
+        console.print(f"  Permissions: [cyan]{flag_value}[/cyan] (--permissions flag)")
+        return flag_value
+
+    # 2. Saved default
+    from prism.dagster.targets import load_user_config
+    global_config = load_user_config()
+    saved = global_config.get("default_permission_tier")
+    if saved:
+        console.print(f"  Permissions: [cyan]{saved}[/cyan] (saved default)")
+        return saved
+
+    # 3. Interactive prompt
+    return _prompt_permission_tier()
+
+
+def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
     """Create Claude Code settings with Prism skills and agents."""
     claude_dir = directory / ".claude"
     claude_dir.mkdir(parents=True, exist_ok=True)
@@ -366,18 +469,13 @@ def _create_claude_settings(directory: Path) -> None:
             shutil.rmtree(skills_dst)
         shutil.copytree(skills_src, skills_dst)
 
+    # Look up permissions for the chosen tier (custom starts from recommended)
+    lookup = tier if tier != "custom" else "recommended"
+    permissions = PERMISSION_TIERS[lookup]
+
     # Create settings.json with hooks configured directly
     settings: dict[str, Any] = {
-        "permissions": {
-            "allow": [
-                "Bash(asp:*)",
-                "Bash(prism:*)",
-                "Bash(python:*)",
-                "Edit",
-                "WebSearch",
-                "WebFetch",
-            ],
-        },
+        "permissions": permissions,
         "hooks": {
             "SessionStart": [
                 {
@@ -423,6 +521,12 @@ def _create_claude_settings(directory: Path) -> None:
     settings_file = claude_dir / "settings.json"
     settings_file.write_text(json.dumps(settings, indent=2) + "\n")
 
+    if tier == "custom":
+        console.print(
+            f"  [yellow]Custom:[/yellow] Edit [cyan]{settings_file}[/cyan] "
+            "to adjust permissions."
+        )
+
 
 def _init_git_repo(directory: Path, no_git: bool) -> None:
     """Initialize git repository if requested."""
@@ -451,6 +555,34 @@ def _init_git_repo(directory: Path, no_git: bool) -> None:
         pass
 
 
+def _get_lightcone_venv_site_packages() -> Path | None:
+    """Read ~/.lightcone/.config to find the Lightcone venv's site-packages."""
+    config_file = Path.home() / ".lightcone" / ".config"
+    if not config_file.exists():
+        return None
+
+    # Parse the simple KEY="VALUE" config file
+    venv_path_str = None
+    for line in config_file.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("VENV_PATH="):
+            venv_path_str = line.split("=", 1)[1].strip().strip('"')
+            break
+
+    if not venv_path_str:
+        return None
+
+    venv_path = Path(venv_path_str)
+    if not venv_path.is_dir():
+        return None
+
+    # Find site-packages inside the Lightcone venv
+    candidates = list(venv_path.glob("lib/python*/site-packages"))
+    if not candidates:
+        candidates = list(venv_path.glob("Lib/site-packages"))  # Windows
+    return candidates[0] if candidates else None
+
+
 def _create_venv(directory: Path, no_venv: bool) -> bool:
     """Create a virtual environment with asp and prism installed."""
     if no_venv:
@@ -460,7 +592,7 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 
     try:
         subprocess.run(
-            [sys.executable, "-m", "venv", str(venv_path)],
+            [sys.executable, "-m", "venv", "--system-site-packages", str(venv_path)],
             capture_output=True,
             check=True,
         )
@@ -470,41 +602,61 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 
     console.print("[green]✓[/green] Created virtual environment (.venv)")
 
-    # Determine pip path
-    if sys.platform == "win32":
-        pip_path = venv_path / "Scripts" / "pip"
-    else:
-        pip_path = venv_path / "bin" / "pip"
+    # --system-site-packages only exposes the *real* system Python's packages.
+    # If Lightcone was installed into its own venv (the common case), we need
+    # to bridge the new project venv to the Lightcone venv's site-packages
+    # via a .pth file.
+    lightcone_sp = _get_lightcone_venv_site_packages()
+    if lightcone_sp:
+        inner_sp_dirs = list(venv_path.glob("lib/python*/site-packages"))
+        if not inner_sp_dirs and sys.platform == "win32":
+            inner_sp_dirs = list(venv_path.glob("Lib/site-packages"))
+        if inner_sp_dirs:
+            pth_file = inner_sp_dirs[0] / "_lightcone.pth"
+            pth_file.write_text(str(lightcone_sp) + "\n")
 
-    # Try to install prism (which pulls in asp as a dependency)
-    lightcone_dir = Path.home() / ".lightcone"
-    env = {**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.1.0"}
+    # Check if prism is now importable in the new venv
+    if sys.platform == "win32":
+        python_path = venv_path / "Scripts" / "python"
+    else:
+        python_path = venv_path / "bin" / "python"
+
     try:
-        if (lightcone_dir / "ASP").is_dir() and (lightcone_dir / "Prism").is_dir():
-            # Use local clones from Lightcone installer
-            install_targets = ["-e", str(lightcone_dir / "ASP")]
-            install_targets += ["-e", str(lightcone_dir / "Prism")]
-            subprocess.run(
-                [str(pip_path), "install", *install_targets],
-                capture_output=True,
-                check=True,
-                env=env,
-            )
-        else:
-            # Fall back to HTTPS clone URLs
-            subprocess.run(
-                [str(pip_path), "install",
-                 "git+https://github.com/LightconeResearch/Prism.git"],
-                capture_output=True,
-                check=True,
-                env=env,
-            )
-        console.print("[green]✓[/green] Installed prism in virtual environment")
-    except subprocess.CalledProcessError:
-        console.print(
-            "[yellow]Warning:[/yellow] Could not install prism automatically. "
-            "You can install manually with: .venv/bin/pip install prism"
+        subprocess.run(
+            [str(python_path), "-c", "import prism"],
+            capture_output=True,
+            check=True,
         )
+        console.print("[green]✓[/green] prism available (via Lightcone environment)")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # Not available — install it
+        pip_path = python_path.parent / "pip"
+        lightcone_dir = Path.home() / ".lightcone"
+        env = {**os.environ, "SETUPTOOLS_SCM_PRETEND_VERSION": "0.1.0"}
+        try:
+            if (lightcone_dir / "ASP").is_dir() and (lightcone_dir / "Prism").is_dir():
+                install_targets = ["-e", str(lightcone_dir / "ASP")]
+                install_targets += ["-e", str(lightcone_dir / "Prism")]
+                subprocess.run(
+                    [str(pip_path), "install", *install_targets],
+                    capture_output=True,
+                    check=True,
+                    env=env,
+                )
+            else:
+                subprocess.run(
+                    [str(pip_path), "install",
+                     "git+https://github.com/LightconeResearch/Prism.git"],
+                    capture_output=True,
+                    check=True,
+                    env=env,
+                )
+            console.print("[green]✓[/green] Installed prism in virtual environment")
+        except subprocess.CalledProcessError:
+            console.print(
+                "[yellow]Warning:[/yellow] Could not install prism automatically. "
+                "You can install manually with: .venv/bin/pip install prism"
+            )
 
     return True
 
@@ -990,7 +1142,7 @@ def _run_setup_wizard(name: str | None = None) -> Path:
     Returns the path where the site config was saved.
     """
     from prism.dagster.sites import get_site_defaults, list_known_sites
-    from prism.dagster.targets import save_site, save_user_config
+    from prism.dagster.targets import load_user_config, save_site, save_user_config
 
     console.print("\n[bold]Prism Setup — Site Configuration[/bold]")
     console.print(
@@ -1129,8 +1281,10 @@ def _run_setup_wizard(name: str | None = None) -> Path:
     path = save_site(site_name, config)
     console.print(f"\n  [green]✓[/green] Saved site: [cyan]{path}[/cyan]")
 
-    # Set as default
-    save_user_config({"default_site": site_name})
+    # Set as default (merge, don't overwrite existing keys like permission tier)
+    user_config = load_user_config()
+    user_config["default_site"] = site_name
+    save_user_config(user_config)
     console.print(
         "  [green]✓[/green] Set as default site in "
         "[cyan]~/.prism/config.yaml[/cyan]"
@@ -1172,14 +1326,16 @@ def setup(
         prism setup --default local    # change default site
     """
     if set_default:
-        from prism.dagster.targets import load_site, save_user_config
+        from prism.dagster.targets import load_site, load_user_config, save_user_config
         # Validate site exists (or is "local")
         if set_default != "local":
             site_config = load_site(set_default)
             if site_config is None:
                 console.print(f"[red]Error:[/red] No configured site '{set_default}'.")
                 raise SystemExit(1)
-        save_user_config({"default_site": set_default})
+        user_config = load_user_config()
+        user_config["default_site"] = set_default
+        save_user_config(user_config)
         console.print(f"[green]✓[/green] Default site set to '{set_default}'")
         return
 
