@@ -371,3 +371,90 @@ class TestRemoteCommandRemoved:
         result = runner.invoke(main, ["remote", "--help"])
         assert result.exit_code != 0 or "No such command" in result.output \
             or "Error" in result.output
+
+
+class TestProfileResolution:
+    """Integration tests for profile resolution flow."""
+
+    def test_run_with_local_profile(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        """Test that prism run with a local profile resolves correctly."""
+        monkeypatch.chdir(tmp_path)
+        import yaml
+
+        # Create minimal asp.yaml with no outputs (just metadata)
+        (tmp_path / "asp.yaml").write_text(yaml.dump({
+            "name": "test-project",
+            "version": "0.1.0",
+            "description": "Test",
+            "decisions": [],
+        }, sort_keys=False))
+
+        # Create prism.yaml with a local profile
+        (tmp_path / "prism.yaml").write_text(yaml.dump({
+            "profiles": {
+                "default": {"site": "local"},
+            }
+        }, sort_keys=False))
+
+        # Create dagster.yaml
+        (tmp_path / "results").mkdir()
+        (tmp_path / "dagster.yaml").write_text(yaml.dump({
+            "storage": {"sqlite": {"base_dir": str(tmp_path / "results" / ".dagster")}}
+        }, sort_keys=False))
+
+        # Run with default profile — should not error on profile resolution
+        # It will succeed with no outputs to materialize
+        result = runner.invoke(main, ["run"])
+        # The command may succeed or fail on "no outputs", but should NOT fail on
+        # profile resolution errors (like "Unknown target" or import errors)
+        assert "Unknown target" not in (result.output or "")
+        assert "ImportError" not in (result.output or "")
+
+    def test_run_with_named_profile(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        """Test that prism run --profile resolves a named profile."""
+        monkeypatch.chdir(tmp_path)
+        import yaml
+
+        (tmp_path / "asp.yaml").write_text(yaml.dump({
+            "name": "test-project",
+            "version": "0.1.0",
+            "description": "Test",
+            "decisions": [],
+        }, sort_keys=False))
+
+        (tmp_path / "prism.yaml").write_text(yaml.dump({
+            "profiles": {
+                "default": {"site": "local"},
+                "production": {
+                    "site": "perlmutter",
+                    "qos": "regular",
+                    "nodes": 8,
+                    "time_limit": "6h",
+                },
+            }
+        }, sort_keys=False))
+
+        (tmp_path / "results").mkdir()
+        (tmp_path / "dagster.yaml").write_text(yaml.dump({
+            "storage": {"sqlite": {"base_dir": str(tmp_path / "results" / ".dagster")}}
+        }, sort_keys=False))
+
+        # Mock load_site for perlmutter since we don't have a real site config
+        site_config = {
+            "site": "perlmutter",
+            "backend": "slurm",
+            "connection": {"hostname": "perlmutter.nersc.gov", "username": "testuser"},
+            "account": "m1234",
+            "container_runtime": "podman-hpc",
+            "defaults": {
+                "node_type": "gpu",
+                "constraint": "gpu",
+                "qos": "debug",
+                "nodes": 1,
+                "time_limit": "30m",
+            },
+        }
+        with patch("prism.dagster.targets.load_site", return_value=site_config):
+            result = runner.invoke(main, ["run", "--profile", "production"])
+        # Should not fail on profile resolution
+        assert "Unknown target" not in (result.output or "")
