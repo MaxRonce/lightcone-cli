@@ -141,29 +141,10 @@ analyses:
 
 ### Decision Constraints
 
-Options can declare constraints using `decision_id.option_id` format:
-
-```yaml
-options:
-  method_a:
-    label: "Method A"
-    incompatible_with: ["scaling.minmax"]   # cannot coexist in a universe
-    requires: ["library.scipy"]             # must be selected together
-```
-
-**Conditional decisions** use `when:` -- the decision only exists when a specific option is selected (see `n_components` example above).
-
-**Excluded options** record choices that were considered but rejected:
-
-```yaml
-options:
-  deprecated_method:
-    label: "Old Method"
-    excluded: true
-    excluded_reason: "Superseded by method_a; see insight_id"
-```
-
-Excluded options cannot be defaults or selected in universes.
+- `incompatible_with: ["decision.option"]` -- cannot coexist in a universe
+- `requires: ["decision.option"]` -- must be selected together
+- `when: decision.option` -- conditional decision, only exists when that option is selected (see `n_components` example above)
+- `excluded: true` + `excluded_reason: "..."` -- option considered but rejected (cannot be default or selected)
 
 ### Writing Results
 
