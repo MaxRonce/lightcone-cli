@@ -256,7 +256,9 @@ class TestSetupCommand:
 class TestAutoTrigger:
     """Tests for the auto-trigger setup check."""
 
-    def test_init_without_setup_triggers_wizard(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+    def test_init_without_setup_triggers_wizard(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
         """Commands should trigger setup when no config exists."""
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")

@@ -875,6 +875,7 @@ def _run_setup_wizard(name: str | None = None) -> Path:
 
     site: dict[str, Any] = {}
     site_key: str | None = None
+    hostname = ""
     if site_idx_int <= len(known):
         site_key = known[site_idx_int - 1][0]
         site = get_site_defaults(site_key) or {}
@@ -884,7 +885,6 @@ def _run_setup_wizard(name: str | None = None) -> Path:
             f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
         )
     else:
-        # Custom site
         pass
 
     # --- Connection ---
@@ -1036,8 +1036,8 @@ def _run_setup_wizard(name: str | None = None) -> Path:
     # Set as default
     save_user_config({"default_target": target_name})
     console.print(
-        f"  [green]✓[/green] Set as default target in "
-        f"[cyan]~/.prism/config.yaml[/cyan]"
+        "  [green]✓[/green] Set as default target in "
+        "[cyan]~/.prism/config.yaml[/cyan]"
     )
     console.print(
         "\n  To override per-project, add to [cyan]prism.yaml[/cyan]:"
@@ -1096,7 +1096,7 @@ def setup(name: str | None, list_flag: bool, show_name: str | None) -> None:
                 console.print(f"  - {t}{marker}")
 
         known = list_known_sites()
-        console.print(f"\n[bold]Known sites[/bold] (auto-detected defaults):")
+        console.print("\n[bold]Known sites[/bold] (auto-detected defaults):")
         for key, display in known:
             console.print(f"  - [cyan]{key}[/cyan]  ({display})")
         console.print(
