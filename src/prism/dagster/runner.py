@@ -82,6 +82,9 @@ class ASPContainerRunner:
         results_dir = self.project_root / "results" / universe_id
         results_dir.mkdir(parents=True, exist_ok=True)
 
+        if self.backend == "local":
+            return self._run_local(full_command, output_id, universe_id)
+
         if self.backend == "slurm":
             return self._run_slurm(
                 command=full_command,
