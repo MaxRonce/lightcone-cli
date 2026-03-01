@@ -519,12 +519,12 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 @main.command()
 @click.argument("outputs", nargs=-1)
 @click.option("--universe", "-u", default=None, help="Universe to materialize for")
-@click.option("--target", "-t", default=None, help="Execution target (e.g., perlmutter)")
+@click.option("--profile", "-p", default=None, help="Compute profile name")
 @click.option("--no-build", is_flag=True, help="Skip automatic container image builds")
 def run(
     outputs: tuple[str, ...],
     universe: str | None,
-    target: str | None,
+    profile: str | None,
     no_build: bool,
 ) -> None:
     """Materialize ASP outputs via Dagster.
@@ -538,24 +538,43 @@ def run(
         prism run accuracy                  # specific output
         prism run --universe baseline       # specific universe
         prism run accuracy -u baseline      # specific output + universe
-        prism run --target perlmutter       # run on SLURM
+        prism run --profile perlmutter      # run on SLURM
         prism run --no-build                # skip container builds
     """
     from prism.dagster.assets import build_definitions
+    from prism.dagster.profiles import load_profiles, resolve_profile
+    from prism.dagster.targets import load_site, load_user_config
 
     project_path = Path.cwd()
     if not (project_path / "asp.yaml").exists():
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
         raise SystemExit(1)
 
-    # Read default target from prism.yaml if not specified on command line
-    if target is None:
-        prism_config = _load_prism_config(project_path)
-        target = prism_config.get("target")
+    # Resolve profile
+    profile_name = profile or "default"
+    profiles = load_profiles(project_path)
+    profile_data = profiles.get(profile_name, {})
+
+    # Determine site
+    site_name = profile_data.get("site")
+    if not site_name:
+        user_config = load_user_config()
+        site_name = user_config.get("default_site")
+
+    # Load site and resolve
+    profile_config = None
+    if site_name:
+        if site_name == "local":
+            profile_config = resolve_profile(profile_data, {"backend": "local"})
+        else:
+            site_config = load_site(site_name)
+            if site_config:
+                profile_config = resolve_profile(profile_data, site_config)
 
     universe_id = universe or "baseline"
     defs = build_definitions(
-        project_path, target=target, universe_id=universe_id, no_build=no_build,
+        project_path, profile_config=profile_config, universe_id=universe_id,
+        no_build=no_build,
     )
 
     console.print("[bold]Materializing outputs...[/bold]")
