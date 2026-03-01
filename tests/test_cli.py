@@ -137,15 +137,23 @@ class TestInitCommand:
         config = yaml.safe_load((project_dir / "prism.yaml").read_text())
         assert config["profiles"]["default"]["site"] == "perlmutter"
 
-    def test_init_without_site_no_prism_yaml(self, runner: CliRunner, tmp_path: Path):
-        """Test that without --site, no prism.yaml is created."""
+    def test_init_without_site_uses_default(self, runner: CliRunner, tmp_path: Path):
+        """Test that without --site, prism.yaml uses default site from user config."""
         project_dir = tmp_path / "no-site-test"
         result = runner.invoke(
             main,
-            ["init", str(project_dir), "--no-git", "--no-venv", "--permissions", "recommended"],
+            ["init", str(project_dir), "--no-git", "--no-venv",
+             "--permissions", "recommended"],
         )
         assert result.exit_code == 0
-        assert not (project_dir / "prism.yaml").exists()
+        assert (project_dir / "prism.yaml").exists()
+
+        import yaml
+        prism_cfg = yaml.safe_load(
+            (project_dir / "prism.yaml").read_text()
+        )
+        # conftest sets default_site: fake
+        assert prism_cfg["profiles"]["default"]["site"] == "fake"
 
 class TestVersionOption:
     """Tests for version option."""

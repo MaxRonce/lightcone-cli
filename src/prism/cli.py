@@ -188,18 +188,23 @@ __pycache__/
     tier = _resolve_permission_tier(permissions)
     _create_claude_settings(directory, tier)
 
-    # Write prism.yaml project config and ensure site is configured
-    if site:
-        _create_prism_config(directory, site)
+    # Write prism.yaml project config — use --site flag, or fall back to
+    # the user's default site from ~/.prism/config.yaml
+    effective_site = site
+    if not effective_site:
+        from prism.dagster.targets import load_user_config
+        effective_site = load_user_config().get("default_site", "local")
+    _create_prism_config(directory, effective_site)
 
-        # Ensure the site has been set up (has a config in ~/.prism/sites/)
-        if site != "local":
-            from prism.dagster.targets import load_site
-            if load_site(site) is None:
-                console.print(
-                    f"\n[yellow]Site [cyan]{site}[/cyan] is not configured yet.[/yellow]"
-                )
-                _run_setup_wizard(site)
+    # If user explicitly passed --site, ensure it's been configured
+    if site and site != "local":
+        from prism.dagster.targets import load_site
+        if load_site(site) is None:
+            console.print(
+                f"\n[yellow]Site [cyan]{site}[/cyan] "
+                "is not configured yet.[/yellow]"
+            )
+            _run_setup_wizard(site)
 
     # Create virtual environment
     _create_venv(directory, no_venv)
