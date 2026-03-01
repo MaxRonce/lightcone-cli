@@ -1152,19 +1152,45 @@ def _run_setup_wizard(name: str | None = None) -> Path:
 
     # --- Site selection ---
     known = list_known_sites()
-    # Filter out "local" — it's built-in and needs no setup
+    # Filter out "local" — shown separately as option
     hpc_sites = [(k, d) for k, d in known if k != "local"]
-    console.print("  [bold]Known HPC sites:[/bold]")
-    for i, (key, display) in enumerate(hpc_sites, 1):
+    console.print("  [bold]Where will you run?[/bold]")
+    for i, (_key, display) in enumerate(hpc_sites, 1):
         console.print(f"    {i}. {display}")
+    local_idx = len(hpc_sites) + 1
+    console.print(f"    {local_idx}. Local (no HPC)")
 
-    site_choices = [str(i) for i in range(1, len(hpc_sites) + 1)]
+    all_choices = [str(i) for i in range(1, local_idx + 1)]
     site_idx = click.prompt(
         "\n  Select site",
-        type=click.Choice(site_choices),
-        default="1",
+        type=click.Choice(all_choices),
+        default=str(local_idx),
     )
     site_idx_int = int(site_idx)
+
+    # --- Local shortcut ---
+    if site_idx_int == local_idx:
+        site_name = name or "local"
+        config: dict[str, Any] = {
+            "site": "local",
+            "backend": "local",
+            "connection": {},
+            "defaults": {},
+        }
+        path = save_site(site_name, config)
+        console.print(
+            f"\n  [green]✓[/green] Saved site: [cyan]{path}[/cyan]"
+        )
+        user_config = load_user_config()
+        user_config["default_site"] = site_name
+        save_user_config(user_config)
+        console.print(
+            "  [green]✓[/green] Set as default site in "
+            "[cyan]~/.prism/config.yaml[/cyan]\n"
+        )
+        return path
+
+    # --- HPC site ---
     site_key = hpc_sites[site_idx_int - 1][0]
     site = get_site_defaults(site_key) or {}
 
@@ -1208,7 +1234,7 @@ def _run_setup_wizard(name: str | None = None) -> Path:
 
     # --- Build and save config ---
     safe = site.get("safe_defaults", {})
-    config: dict[str, Any] = {
+    config = {
         "site": site_key,
         "backend": site.get("backend", "slurm"),
         "connection": {
