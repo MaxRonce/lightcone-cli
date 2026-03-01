@@ -229,9 +229,9 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        # site=1(perlmutter), username, account,
+        # hpc=yes, site=1(perlmutter), username, account,
         # runtime=1(podman-hpc), site_name=perlmutter
-        input_lines = "1\ntestuser\nm1234\n1\nperlmutter\n"
+        input_lines = "y\n1\ntestuser\nm1234\n1\nperlmutter\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
         assert "Saved site" in result.output
@@ -254,11 +254,11 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        # site=2(local) — no further prompts needed
-        input_lines = "2\n"
+        # hpc=no — defaults to local, no further prompts
+        input_lines = "n\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
-        assert "Saved site" in result.output
+        assert "local" in result.output
 
         import yaml
         site = yaml.safe_load(
@@ -279,9 +279,9 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        # site=1(perlmutter), username, account,
+        # hpc=yes, site=1(perlmutter), username, account,
         # runtime=1, site_name=mypm
-        input_lines = "1\ntestuser\nm1234\n1\nmypm\n"
+        input_lines = "y\n1\ntestuser\nm1234\n1\nmypm\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 

@@ -107,7 +107,7 @@ def main(ctx: click.Context) -> None:
 @click.option("--site", "-s", default=None, help="Site for default compute profile")
 @click.option(
     "--permissions",
-    type=click.Choice(["yolo", "recommended", "minimal", "custom"]),
+    type=click.Choice(["yolo", "recommended", "minimal"]),
     default=None,
     help="Claude Code permission tier (default: prompt or saved default)",
 )
@@ -383,18 +383,17 @@ def _create_prism_config(directory: Path, site_name: str) -> None:
 def _prompt_permission_tier() -> str:
     """Interactively prompt the user to choose a permission tier.
 
-    Returns one of: 'yolo', 'recommended', 'minimal', 'custom'.
+    Returns one of: 'yolo', 'recommended', 'minimal'.
     Optionally saves the choice as the default for future projects.
     """
     console.print("\n[bold]Claude Code permission level[/bold]")
     console.print("Controls what Claude can do without asking.\n")
     console.print("  1) yolo — Everything auto-allowed. No prompts.")
     console.print("  2) recommended — Prism workflow auto-allowed. Prompts for the rest.")
-    console.print("  3) minimal — Only file reading. Everything else prompts.")
-    console.print("  4) custom — Start from recommended, edit settings.json yourself.\n")
+    console.print("  3) minimal — Only file reading. Everything else prompts.\n")
 
-    choice_map = {"1": "yolo", "2": "recommended", "3": "minimal", "4": "custom"}
-    raw = click.prompt("Choose [1/2/3/4]", default="2").strip()
+    choice_map = {"1": "yolo", "2": "recommended", "3": "minimal"}
+    raw = click.prompt("Choose [1/2/3]", default="2").strip()
     tier = choice_map.get(raw, "recommended")
 
     save = click.confirm(
@@ -469,9 +468,7 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
             shutil.rmtree(skills_dst)
         shutil.copytree(skills_src, skills_dst)
 
-    # Look up permissions for the chosen tier (custom starts from recommended)
-    lookup = tier if tier != "custom" else "recommended"
-    permissions = PERMISSION_TIERS[lookup]
+    permissions = PERMISSION_TIERS[tier]
 
     # Create settings.json with hooks configured directly
     settings: dict[str, Any] = {
@@ -521,11 +518,6 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
     settings_file = claude_dir / "settings.json"
     settings_file.write_text(json.dumps(settings, indent=2) + "\n")
 
-    if tier == "custom":
-        console.print(
-            f"  [yellow]Custom:[/yellow] Edit [cyan]{settings_file}[/cyan] "
-            "to adjust permissions."
-        )
 
 
 def _init_git_repo(directory: Path, no_git: bool) -> None:
@@ -1150,26 +1142,13 @@ def _run_setup_wizard(name: str | None = None) -> Path:
         "overridden per-project via compute profiles.\n"
     )
 
-    # --- Site selection ---
-    known = list_known_sites()
-    # Filter out "local" — shown separately as option
-    hpc_sites = [(k, d) for k, d in known if k != "local"]
-    console.print("  [bold]Where will you run?[/bold]")
-    for i, (_key, display) in enumerate(hpc_sites, 1):
-        console.print(f"    {i}. {display}")
-    local_idx = len(hpc_sites) + 1
-    console.print(f"    {local_idx}. Local (no HPC)")
-
-    all_choices = [str(i) for i in range(1, local_idx + 1)]
-    site_idx = click.prompt(
-        "\n  Select site",
-        type=click.Choice(all_choices),
-        default=str(local_idx),
+    # --- Configure HPC? ---
+    configure_hpc = click.confirm(
+        "  Configure a remote execution site (HPC)?",
+        default=False,
     )
-    site_idx_int = int(site_idx)
 
-    # --- Local shortcut ---
-    if site_idx_int == local_idx:
+    if not configure_hpc:
         site_name = name or "local"
         config: dict[str, Any] = {
             "site": "local",
@@ -1179,19 +1158,27 @@ def _run_setup_wizard(name: str | None = None) -> Path:
         }
         path = save_site(site_name, config)
         console.print(
-            f"\n  [green]✓[/green] Saved site: [cyan]{path}[/cyan]"
+            "\n  [green]✓[/green] Default site: local"
         )
         user_config = load_user_config()
         user_config["default_site"] = site_name
         save_user_config(user_config)
-        console.print(
-            "  [green]✓[/green] Set as default site in "
-            "[cyan]~/.prism/config.yaml[/cyan]\n"
-        )
         return path
 
-    # --- HPC site ---
-    site_key = hpc_sites[site_idx_int - 1][0]
+    # --- HPC site selection ---
+    known = list_known_sites()
+    hpc_sites = [(k, d) for k, d in known if k != "local"]
+    console.print("\n  [bold]Known HPC sites:[/bold]")
+    for i, (_key, display) in enumerate(hpc_sites, 1):
+        console.print(f"    {i}. {display}")
+
+    site_choices = [str(i) for i in range(1, len(hpc_sites) + 1)]
+    site_idx = click.prompt(
+        "\n  Select site",
+        type=click.Choice(site_choices),
+        default="1",
+    )
+    site_key = hpc_sites[int(site_idx) - 1][0]
     site = get_site_defaults(site_key) or {}
 
     display = site.get("display_name", site_key)
