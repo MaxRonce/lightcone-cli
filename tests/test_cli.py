@@ -111,11 +111,15 @@ class TestInitCommand:
 
     def test_init_with_target_creates_prism_yaml(self, runner: CliRunner, tmp_path: Path):
         """Test that --target creates prism.yaml with the default target."""
+        from unittest.mock import patch
+
         project_dir = tmp_path / "target-test"
-        result = runner.invoke(
-            main,
-            ["init", str(project_dir), "--no-git", "--no-venv", "--target", "perlmutter"],
-        )
+        # Patch load_target so the interactive setup wizard is not triggered
+        with patch("prism.dagster.targets.load_target", return_value={"name": "perlmutter"}):
+            result = runner.invoke(
+                main,
+                ["init", str(project_dir), "--no-git", "--no-venv", "--target", "perlmutter"],
+            )
         assert result.exit_code == 0
         assert (project_dir / "prism.yaml").exists()
 
