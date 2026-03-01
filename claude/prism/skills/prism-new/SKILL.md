@@ -43,9 +43,7 @@ Stage banner: ANALYSIS STRUCTURE
 
 > "Walk me through your analysis step by step. What goes in, what comes out at the end?"
 
-From this, identify **inputs and outputs**. If the workflow has stages that genuinely need to be independent, use AskUserQuestion to confirm whether to split into sub-analyses. Otherwise, structure as a single flat analysis.
-
-For multi-stage: confirm stage boundaries, map each stage's inputs/outputs and `from:` cross-references. See CLAUDE.md template for YAML structure.
+**Guidance on sub-analyses:** Analyses should only be split into multiple sub-analyses if each sub analysis genuinely has materially different inputs and outputs, and if the scope may be too broad if there is just one analysis; we overall want a sub-analysis to feel like it should genuinely be a self-contained product. For example, training + evaluation would typically be one analysis, because the product would be the trained and validated neural network estimator. When in doubt, opt for a single analysis at this stage. If it does need to be multi-stage, ask the user for confirmation and how to split it. For multi-stage analyses, make sure you confirm stage boundaries. See CLAUDE.md template for YAML structure.
 
 **Update asp.yaml** with `inputs` and `outputs` (extending the spec from Phase 1).
 
