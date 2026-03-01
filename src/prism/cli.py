@@ -54,7 +54,7 @@ def main(ctx: click.Context) -> None:
             "\n[bold yellow]No execution environment configured.[/bold yellow]"
         )
         console.print(
-            "  Prism needs a default execution target before you can use it.\n"
+            "  Prism needs a default site configured before you can use it.\n"
         )
         ctx.invoke(setup)
 
@@ -68,8 +68,8 @@ def main(ctx: click.Context) -> None:
 @click.argument("directory", type=click.Path(path_type=Path), default=".")
 @click.option("--no-git", is_flag=True, help="Don't initialize git repository")
 @click.option("--no-venv", is_flag=True, help="Don't create Python virtual environment")
-@click.option("--target", "-t", default=None, help="Default execution target (e.g., perlmutter)")
-def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> None:
+@click.option("--site", "-s", default=None, help="Site for default compute profile")
+def init(directory: Path, no_git: bool, no_venv: bool, site: str | None) -> None:
     """Create a new ASP analysis project with full agentic scaffolding.
 
     Creates the project with ASP specification files, Claude Code plugin
@@ -79,7 +79,7 @@ def init(directory: Path, no_git: bool, no_venv: bool, target: str | None) -> No
 
     Examples:
         prism init my-analysis
-        prism init my-analysis --target perlmutter
+        prism init my-analysis --site perlmutter
         prism init my-analysis --no-git --no-venv
     """
     # Check if this is already an ASP project
@@ -137,23 +137,23 @@ __pycache__/
     _create_boilerplate_asp_yaml(directory)
 
     # Create CLAUDE.md with project conventions
-    _create_claude_md(directory, target=target)
+    _create_claude_md(directory, target=site)
 
     # Create Claude Code settings with local skills
     _create_claude_settings(directory)
 
-    # Write prism.yaml project config and ensure target is configured
-    if target:
-        _create_prism_config(directory, target)
+    # Write prism.yaml project config and ensure site is configured
+    if site:
+        _create_prism_config(directory, site)
 
-        # Ensure the target has been set up (has a config in ~/.prism/targets/)
-        from prism.dagster.targets import load_target
-
-        if load_target(target) is None:
-            console.print(
-                f"\n[yellow]Target [cyan]{target}[/cyan] is not configured yet.[/yellow]"
-            )
-            _run_setup_wizard(target)
+        # Ensure the site has been set up (has a config in ~/.prism/sites/)
+        if site != "local":
+            from prism.dagster.targets import load_site
+            if load_site(site) is None:
+                console.print(
+                    f"\n[yellow]Site [cyan]{site}[/cyan] is not configured yet.[/yellow]"
+                )
+                _run_setup_wizard(site)
 
     # Create virtual environment
     _create_venv(directory, no_venv)
@@ -163,8 +163,8 @@ __pycache__/
 
     # Print success message
     console.print(f"[green]✓[/green] Created ASP analysis project: [cyan]{directory}[/cyan]")
-    if target:
-        console.print(f"  Default target: [cyan]{target}[/cyan]")
+    if site:
+        console.print(f"  Default site: [cyan]{site}[/cyan]")
 
     console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
     console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
@@ -318,21 +318,19 @@ def _create_claude_md(directory: Path, target: str | None = None) -> None:
     (directory / "CLAUDE.md").write_text(content)
 
 
-def _create_prism_config(directory: Path, target: str) -> None:
-    """Create prism.yaml with project-level configuration."""
-    config = {"target": target}
+def _create_prism_config(directory: Path, site_name: str) -> None:
+    """Create prism.yaml with a default compute profile."""
+    config = {
+        "profiles": {
+            "default": {
+                "site": site_name,
+            }
+        }
+    }
     (directory / "prism.yaml").write_text(
         yaml.dump(config, default_flow_style=False, sort_keys=False)
     )
-    console.print(f"[green]✓[/green] Created prism.yaml (default target: {target})")
-
-
-def _load_prism_config(project_path: Path) -> dict[str, Any]:
-    """Load project-level prism.yaml configuration."""
-    config_path = project_path / "prism.yaml"
-    if config_path.exists():
-        return yaml.safe_load(config_path.read_text()) or {}
-    return {}
+    console.print(f"[green]✓[/green] Created prism.yaml (default site: {site_name})")
 
 
 def _create_claude_settings(directory: Path) -> None:
@@ -863,15 +861,16 @@ def dev(port: int, universe: str) -> None:
 def _run_setup_wizard(name: str | None = None) -> Path:
     """Run the interactive setup wizard.
 
-    Prompts for site selection, node type, QOS, and resource limits.
-    Constraint and container flags are derived automatically from node type.
+    Prompts for site selection, node type, QOS, container runtime,
+    and default resources. Constraint and container flags are derived
+    automatically from node type.
 
-    Returns the path where the target config was saved.
+    Returns the path where the site config was saved.
     """
     from prism.dagster.sites import get_site_defaults, list_known_sites
-    from prism.dagster.targets import save_target, save_user_config
+    from prism.dagster.targets import save_site, save_user_config
 
-    console.print("\n[bold]Prism Setup — Default Execution Environment[/bold]")
+    console.print("\n[bold]Prism Setup — Site Configuration[/bold]")
     console.print(
         "  These settings are stored in [cyan]~/.prism/[/cyan] and can be "
         "overridden per-project.\n"
@@ -879,38 +878,29 @@ def _run_setup_wizard(name: str | None = None) -> Path:
 
     # --- Site selection ---
     known = list_known_sites()
+    # Filter out "local" — it's built-in and needs no setup
+    hpc_sites = [(k, d) for k, d in known if k != "local"]
     console.print("  [bold]Known HPC sites:[/bold]")
-    for i, (key, display) in enumerate(known, 1):
+    for i, (key, display) in enumerate(hpc_sites, 1):
         console.print(f"    {i}. {display}")
-    console.print(f"    {len(known) + 1}. Custom")
 
-    site_choices = [str(i) for i in range(1, len(known) + 2)]
+    site_choices = [str(i) for i in range(1, len(hpc_sites) + 1)]
     site_idx = click.prompt(
         "\n  Select site",
         type=click.Choice(site_choices),
         default="1",
     )
     site_idx_int = int(site_idx)
+    site_key = hpc_sites[site_idx_int - 1][0]
+    site = get_site_defaults(site_key) or {}
 
-    site: dict[str, Any] = {}
-    site_key: str | None = None
-    hostname = ""
-    if site_idx_int <= len(known):
-        site_key = known[site_idx_int - 1][0]
-        site = get_site_defaults(site_key) or {}
-        display = site.get("display_name", site_key)
-        hostname = site.get("connection", {}).get("hostname", "")
-        console.print(
-            f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
-        )
-    else:
-        pass
+    display = site.get("display_name", site_key)
+    hostname = site.get("connection", {}).get("hostname", "")
+    console.print(
+        f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
+    )
 
     # --- Connection ---
-    site_conn = site.get("connection", {})
-    if not site_key:
-        hostname = click.prompt("  Hostname", default="")
-
     username = click.prompt(
         "  Username",
         default=os.environ.get("USER", ""),
@@ -923,203 +913,179 @@ def _run_setup_wizard(name: str | None = None) -> Path:
     container_flags: list[str] = []
     node_type_key = ""
 
-    if site_node_types:
-        nt_keys = list(site_node_types.keys())
-        console.print("\n  [bold]Node type:[/bold]")
-        for i, ntk in enumerate(nt_keys, 1):
-            ntinfo = site_node_types[ntk]
-            desc = ntinfo.get("description", ntk)
-            console.print(f"    {i}. {desc}")
+    nt_keys = list(site_node_types.keys())
+    console.print("\n  [bold]Node type:[/bold]")
+    for i, ntk in enumerate(nt_keys, 1):
+        ntinfo = site_node_types[ntk]
+        desc = ntinfo.get("description", ntk)
+        console.print(f"    {i}. {desc}")
 
-        nt_choices = [str(i) for i in range(1, len(nt_keys) + 1)]
-        nt_idx = click.prompt(
-            "  Select node type",
-            type=click.Choice(nt_choices),
-            default="1",
-        )
-        nt_idx_int = int(nt_idx)
-        node_type_key = nt_keys[nt_idx_int - 1]
-        ntinfo = site_node_types[node_type_key]
-        constraint = ntinfo["constraint"]
-        container_flags = ntinfo.get("container_flags", [])
-        console.print(f"    [dim]→ Constraint: {constraint}[/dim]")
-        if container_flags:
-            console.print(
-                f"    [dim]→ Container flags: {' '.join(container_flags)}[/dim]"
-            )
-    else:
-        constraint = click.prompt(
-            "  Constraint (e.g., cpu, gpu, gpu&hbm80g)",
-            default="",
+    nt_choices = [str(i) for i in range(1, len(nt_keys) + 1)]
+    nt_idx = click.prompt(
+        "  Select node type",
+        type=click.Choice(nt_choices),
+        default="1",
+    )
+    nt_idx_int = int(nt_idx)
+    node_type_key = nt_keys[nt_idx_int - 1]
+    ntinfo = site_node_types[node_type_key]
+    constraint = ntinfo["constraint"]
+    container_flags = ntinfo.get("container_flags", [])
+    console.print(f"    [dim]→ Constraint: {constraint}[/dim]")
+    if container_flags:
+        console.print(
+            f"    [dim]→ Container flags: {' '.join(container_flags)}[/dim]"
         )
 
     # --- QOS ---
     site_qos = site.get("qos_options", {})
-    if site_qos:
-        qos_keys = list(site_qos.keys())
-        default_qos_idx = "1"
-        for i, qk in enumerate(qos_keys, 1):
-            if site_qos[qk].get("default"):
-                default_qos_idx = str(i)
+    qos_keys = list(site_qos.keys())
+    default_qos_idx = "1"
+    for i, qk in enumerate(qos_keys, 1):
+        if site_qos[qk].get("default"):
+            default_qos_idx = str(i)
 
-        console.print("\n  [bold]QOS:[/bold]")
-        for i, qk in enumerate(qos_keys, 1):
-            desc = site_qos[qk].get("description", "")
-            console.print(f"    {i}. {qk} — {desc}")
+    console.print("\n  [bold]QOS:[/bold]")
+    for i, qk in enumerate(qos_keys, 1):
+        desc = site_qos[qk].get("description", "")
+        console.print(f"    {i}. {qk} — {desc}")
 
-        qos_choices = [str(i) for i in range(1, len(qos_keys) + 1)]
-        qos_idx = click.prompt(
-            "  Select QOS",
-            type=click.Choice(qos_choices),
-            default=default_qos_idx,
-        )
-        qos = qos_keys[int(qos_idx) - 1]
-    else:
-        qos = click.prompt("  QOS", default="regular")
+    qos_choices = [str(i) for i in range(1, len(qos_keys) + 1)]
+    qos_idx = click.prompt(
+        "  Select QOS",
+        type=click.Choice(qos_choices),
+        default=default_qos_idx,
+    )
+    qos = qos_keys[int(qos_idx) - 1]
 
     # --- Container runtime ---
     site_runtimes = site.get("container_runtimes", [])
-    if site_runtimes:
-        console.print("\n  [bold]Container runtime:[/bold]")
-        for i, rt in enumerate(site_runtimes, 1):
-            console.print(f"    {i}. {rt}")
+    console.print("\n  [bold]Container runtime:[/bold]")
+    for i, rt in enumerate(site_runtimes, 1):
+        console.print(f"    {i}. {rt}")
 
-        rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
-        rt_idx = click.prompt(
-            "  Select runtime",
-            type=click.Choice(rt_choices),
-            default="1",
-        )
-        container_runtime = site_runtimes[int(rt_idx) - 1]
-    else:
-        container_runtime = click.prompt(
-            "  Container runtime",
-            type=click.Choice(["podman-hpc", "shifter", "singularity"]),
-            default=site.get("scheduler", {}).get("container_runtime", "podman-hpc"),
-        )
+    rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
+    rt_idx = click.prompt(
+        "  Select runtime",
+        type=click.Choice(rt_choices),
+        default="1",
+    )
+    container_runtime = site_runtimes[int(rt_idx) - 1]
 
-    # --- Resource limits ---
-    site_limits = site.get("resource_limits", {})
-    console.print("\n  [bold]Resource limits[/bold]")
-    max_nodes = click.prompt(
-        "    Max nodes per job", type=int,
-        default=site_limits.get("max_nodes", 4),
+    # --- Default resources ---
+    console.print("\n  [bold]Default resources[/bold]")
+    default_nodes = click.prompt(
+        "    Nodes", type=int, default=1,
     )
-    max_walltime = click.prompt(
-        "    Max walltime (minutes)", type=int,
-        default=site_limits.get("max_walltime_minutes", 240),
-    )
-    max_concurrent = click.prompt(
-        "    Max concurrent jobs", type=int,
-        default=site_limits.get("max_concurrent_jobs", 8),
+    default_time_limit = click.prompt(
+        "    Time limit (e.g., 30m, 2h)", default="30m",
     )
 
-    # --- Target name ---
+    # --- Site name ---
     default_name = name or site_key or "default"
-    target_name = click.prompt(
-        "\n  Target name",
-        default=default_name,
-    )
+    site_name = click.prompt("\n  Site name", default=default_name)
 
     # --- Build and save config ---
-    scheduler_config: dict[str, Any] = {
-        "account": account,
-        "node_type": node_type_key or "custom",
-        "constraint": constraint,
-        "qos": qos,
-        "container_runtime": container_runtime,
-    }
-    if container_flags:
-        scheduler_config["container_flags"] = container_flags
-
     config: dict[str, Any] = {
-        "name": target_name,
+        "site": site_key,
         "backend": site.get("backend", "slurm"),
         "connection": {
-            "hostname": site_conn.get("hostname", hostname),
+            "hostname": site.get("connection", {}).get("hostname", ""),
             "username": username,
         },
-        "scheduler": scheduler_config,
-        "resource_limits": {
-            "max_nodes": max_nodes,
-            "max_walltime_minutes": max_walltime,
-            "max_concurrent_jobs": max_concurrent,
+        "account": account,
+        "container_runtime": container_runtime,
+        "defaults": {
+            "node_type": node_type_key,
+            "constraint": constraint,
+            "qos": qos,
+            "nodes": default_nodes,
+            "time_limit": default_time_limit,
         },
     }
-    if site_key:
-        config["site"] = site_key
 
-    path = save_target(target_name, config)
-    console.print(f"\n  [green]✓[/green] Saved target: [cyan]{path}[/cyan]")
+    path = save_site(site_name, config)
+    console.print(f"\n  [green]✓[/green] Saved site: [cyan]{path}[/cyan]")
 
     # Set as default
-    save_user_config({"default_target": target_name})
+    save_user_config({"default_site": site_name})
     console.print(
-        "  [green]✓[/green] Set as default target in "
+        "  [green]✓[/green] Set as default site in "
         "[cyan]~/.prism/config.yaml[/cyan]"
     )
     console.print(
-        "\n  To override per-project, add to [cyan]prism.yaml[/cyan]:"
+        "\n  To create compute profiles, add to [cyan]prism.yaml[/cyan]:"
     )
-    console.print("    [dim]target: <other-target-name>[/dim]\n")
+    console.print("    [dim]profiles:[/dim]")
+    console.print("    [dim]  default:[/dim]")
+    console.print(f"    [dim]    site: {site_name}[/dim]\n")
 
     return path
 
 
 @main.command()
 @click.argument("name", required=False)
-@click.option("--list", "list_flag", is_flag=True, help="List saved targets")
-@click.option("--show", "show_name", default=None, help="Show a target's config")
-def setup(name: str | None, list_flag: bool, show_name: str | None) -> None:
-    """Set up or manage execution environments.
+@click.option("--list", "list_flag", is_flag=True, help="List configured sites")
+@click.option("--show", "show_name", default=None, help="Show a site's config")
+@click.option("--default", "set_default", default=None, help="Set default site")
+def setup(name: str | None, list_flag: bool, show_name: str | None, set_default: str | None) -> None:
+    """Set up or manage site configurations.
 
-    Configures connection details, node type, QOS, and resource limits
-    for remote execution backends (SLURM). Constraint and container flags
-    are derived automatically from the chosen node type.
+    Configures connection details, node type, QOS, container runtime,
+    and default resources for remote execution backends (SLURM).
+    Constraint and container flags are derived automatically from the
+    chosen node type.
 
-    Settings are stored at the user level (~/.prism/) and can be overridden
-    per-project via prism.yaml.
-
-    Known HPC sites (NERSC Perlmutter, etc.) are auto-detected and
-    pre-filled with sensible defaults.
+    Settings are stored at the user level (~/.prism/sites/) and
+    referenced by compute profiles in prism.yaml.
 
     Examples:
-        prism setup                   # interactive wizard
-        prism setup perlmutter        # configure a named target
-        prism setup --list            # list saved targets
-        prism setup --show perlmutter # show a target's config
+        prism setup                    # interactive wizard
+        prism setup perlmutter         # configure a named site
+        prism setup --list             # list configured sites
+        prism setup --show perlmutter  # show a site's config
+        prism setup --default local    # change default site
     """
-    from prism.dagster.sites import list_known_sites
-    from prism.dagster.targets import list_targets, load_target, load_user_config
+    if set_default:
+        from prism.dagster.targets import load_site, save_user_config
+        # Validate site exists (or is "local")
+        if set_default != "local":
+            site_config = load_site(set_default)
+            if site_config is None:
+                console.print(f"[red]Error:[/red] No configured site '{set_default}'.")
+                raise SystemExit(1)
+        save_user_config({"default_site": set_default})
+        console.print(f"[green]✓[/green] Default site set to '{set_default}'")
+        return
 
     if show_name:
-        config = load_target(show_name)
+        from prism.dagster.targets import load_site
+        config = load_site(show_name)
         if config is None:
-            console.print(f"[red]Error:[/red] No saved target '{show_name}'.")
+            console.print(f"[red]Error:[/red] No configured site '{show_name}'.")
             raise SystemExit(1)
-        console.print(f"[bold]Target: {show_name}[/bold]\n")
+        console.print(f"[bold]Site: {show_name}[/bold]\n")
         console.print(yaml.dump(config, default_flow_style=False, sort_keys=False))
         return
 
     if list_flag:
-        saved = list_targets()
+        from prism.dagster.targets import list_sites, load_user_config
+        saved = list_sites()
         user_config = load_user_config()
-        default = user_config.get("default_target", "")
+        default = user_config.get("default_site", "")
 
-        if not saved:
-            console.print("[dim]No saved targets.[/dim]")
-        else:
-            console.print("[bold]Saved targets:[/bold]")
-            for t in saved:
-                marker = " [green](default)[/green]" if t == default else ""
-                console.print(f"  - {t}{marker}")
-
-        known = list_known_sites()
-        console.print("\n[bold]Known sites[/bold] (auto-detected defaults):")
-        for key, display in known:
-            console.print(f"  - [cyan]{key}[/cyan]  ({display})")
+        console.print("[bold]Configured sites:[/bold]")
+        # Always show local
+        local_marker = " [green](default)[/green]" if default == "local" else ""
+        console.print(f"  - local  (built-in){local_marker}")
+        if saved:
+            for s in saved:
+                marker = " [green](default)[/green]" if s == default else ""
+                console.print(f"  - {s}{marker}")
+        elif not saved:
+            console.print("  [dim](no additional sites configured)[/dim]")
         console.print(
-            "\nRun [cyan]prism setup <name>[/cyan] to configure a target."
+            "\nRun [cyan]prism setup[/cyan] to configure a new site."
         )
         return
 

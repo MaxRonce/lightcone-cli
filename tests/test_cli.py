@@ -110,25 +110,24 @@ class TestInitCommand:
         assert result.exit_code == 0
         assert (project_dir / "dagster.yaml").exists()
 
-    def test_init_with_target_creates_prism_yaml(self, runner: CliRunner, tmp_path: Path):
-        """Test that --target creates prism.yaml with the default target."""
-        project_dir = tmp_path / "target-test"
-        # Patch load_target so the interactive setup wizard is not triggered
-        with patch("prism.dagster.targets.load_target", return_value={"name": "perlmutter"}):
+    def test_init_with_site_creates_prism_yaml(self, runner: CliRunner, tmp_path: Path):
+        """Test that --site creates prism.yaml with a default profile."""
+        project_dir = tmp_path / "site-test"
+        with patch("prism.dagster.targets.load_site", return_value={"site": "perlmutter"}):
             result = runner.invoke(
                 main,
-                ["init", str(project_dir), "--no-git", "--no-venv", "--target", "perlmutter"],
+                ["init", str(project_dir), "--no-git", "--no-venv", "--site", "perlmutter"],
             )
         assert result.exit_code == 0
         assert (project_dir / "prism.yaml").exists()
 
         import yaml
         config = yaml.safe_load((project_dir / "prism.yaml").read_text())
-        assert config["target"] == "perlmutter"
+        assert config["profiles"]["default"]["site"] == "perlmutter"
 
-    def test_init_without_target_no_prism_yaml(self, runner: CliRunner, tmp_path: Path):
-        """Test that without --target, no prism.yaml is created."""
-        project_dir = tmp_path / "no-target-test"
+    def test_init_without_site_no_prism_yaml(self, runner: CliRunner, tmp_path: Path):
+        """Test that without --site, no prism.yaml is created."""
+        project_dir = tmp_path / "no-site-test"
         result = runner.invoke(
             main,
             ["init", str(project_dir), "--no-git", "--no-venv"],
@@ -168,25 +167,25 @@ class TestSetupCommand:
     def test_setup_help(self, runner: CliRunner):
         result = runner.invoke(main, ["setup", "--help"])
         assert result.exit_code == 0
-        assert "execution environment" in result.output.lower() or "Setup" in result.output
+        assert "site" in result.output.lower() or "Setup" in result.output
 
     def test_setup_list_empty(self, runner: CliRunner, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: tmp_path / "targets")
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: tmp_path / "sites")
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
         result = runner.invoke(main, ["setup", "--list"])
         assert result.exit_code == 0
-        assert "No saved targets" in result.output
+        assert "no additional sites" in result.output.lower() or "local" in result.output
 
-    def test_setup_list_with_targets(self, runner: CliRunner, tmp_path: Path, monkeypatch):
-        targets_dir = tmp_path / "targets"
-        targets_dir.mkdir()
-        (targets_dir / "perlmutter.yaml").write_text("name: perlmutter\n")
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: targets_dir)
+    def test_setup_list_with_sites(self, runner: CliRunner, tmp_path: Path, monkeypatch):
+        sites_dir = tmp_path / "sites"
+        sites_dir.mkdir()
+        (sites_dir / "perlmutter.yaml").write_text("site: perlmutter\n")
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: sites_dir)
         config_path = tmp_path / "config.yaml"
-        config_path.write_text("default_target: perlmutter\n")
+        config_path.write_text("default_site: perlmutter\n")
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
         result = runner.invoke(main, ["setup", "--list"])
@@ -194,63 +193,63 @@ class TestSetupCommand:
         assert "perlmutter" in result.output
 
     def test_setup_show(self, runner: CliRunner, tmp_path: Path, monkeypatch):
-        targets_dir = tmp_path / "targets"
-        targets_dir.mkdir()
-        (targets_dir / "perlmutter.yaml").write_text("name: perlmutter\nbackend: slurm\n")
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: targets_dir)
+        sites_dir = tmp_path / "sites"
+        sites_dir.mkdir()
+        (sites_dir / "perlmutter.yaml").write_text("site: perlmutter\nbackend: slurm\n")
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: sites_dir)
         result = runner.invoke(main, ["setup", "--show", "perlmutter"])
         assert result.exit_code == 0
         assert "slurm" in result.output
 
     def test_setup_show_nonexistent(self, runner: CliRunner, tmp_path: Path, monkeypatch):
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: tmp_path / "targets")
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: tmp_path / "sites")
         result = runner.invoke(main, ["setup", "--show", "nonexistent"])
         assert result.exit_code == 1
 
     def test_setup_wizard_known_site(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         """Test the wizard flow with a known site (perlmutter)."""
-        targets_dir = tmp_path / "targets"
-        targets_dir.mkdir(parents=True)
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: targets_dir)
+        sites_dir = tmp_path / "sites"
+        sites_dir.mkdir(parents=True)
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: sites_dir)
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
         # Simulate wizard input: site=1(perlmutter), username=testuser,
         # account=m1234, node_type=1(gpu), qos=1(regular),
-        # runtime=1(podman-hpc), max_nodes=4, max_walltime=360,
-        # max_concurrent=8, target_name=perlmutter
-        input_lines = "1\ntestuser\nm1234\n1\n1\n1\n4\n360\n8\nperlmutter\n"
+        # runtime=1(podman-hpc), nodes=1, time_limit=30m,
+        # site_name=perlmutter
+        input_lines = "1\ntestuser\nm1234\n1\n1\n1\n1\n30m\nperlmutter\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
-        assert "Saved target" in result.output
-        assert (targets_dir / "perlmutter.yaml").exists()
+        assert "Saved site" in result.output
+        assert (sites_dir / "perlmutter.yaml").exists()
         assert (tmp_path / "config.yaml").exists()
 
         # Verify constraint was auto-derived
         import yaml
-        target = yaml.safe_load((targets_dir / "perlmutter.yaml").read_text())
-        assert target["scheduler"]["constraint"] == "gpu"
-        assert target["scheduler"]["node_type"] == "gpu"
+        site = yaml.safe_load((sites_dir / "perlmutter.yaml").read_text())
+        assert site["defaults"]["constraint"] == "gpu"
+        assert site["defaults"]["node_type"] == "gpu"
 
     def test_setup_wizard_sets_default(self, runner: CliRunner, tmp_path: Path, monkeypatch):
-        """Test that wizard sets the default_target in config.yaml."""
-        targets_dir = tmp_path / "targets"
-        targets_dir.mkdir(parents=True)
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: targets_dir)
+        """Test that wizard sets the default_site in config.yaml."""
+        sites_dir = tmp_path / "sites"
+        sites_dir.mkdir(parents=True)
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: sites_dir)
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        input_lines = "1\ntestuser\nm1234\n1\n1\n1\n4\n360\n8\nmypm\n"
+        input_lines = "1\ntestuser\nm1234\n1\n1\n1\n1\n30m\nmypm\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 
         import yaml
         config = yaml.safe_load((tmp_path / "config.yaml").read_text())
-        assert config["default_target"] == "mypm"
+        assert config["default_site"] == "mypm"
 
 
 class TestAutoTrigger:
@@ -269,10 +268,10 @@ class TestAutoTrigger:
         """prism setup itself should not trigger the auto-trigger."""
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
-        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
-                            lambda: tmp_path / "targets")
+        monkeypatch.setattr("prism.dagster.targets.get_sites_dir",
+                            lambda: tmp_path / "sites")
         result = runner.invoke(main, ["setup", "--list"])
-        assert "No saved targets" in result.output
+        assert "no additional sites" in result.output.lower() or "local" in result.output
 
     def test_version_skips_auto_trigger(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         """--version should not trigger setup."""
@@ -292,7 +291,7 @@ class TestAutoTrigger:
     def test_commands_work_after_setup(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         """Commands should work normally when config exists."""
         config_path = tmp_path / "config.yaml"
-        config_path.write_text("default_target: perlmutter\n")
+        config_path.write_text("default_site: perlmutter\n")
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
         result = runner.invoke(main, ["init", str(tmp_path / "proj"), "--no-git", "--no-venv"])
