@@ -640,7 +640,7 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
             else:
                 subprocess.run(
                     [str(pip_path), "install",
-                     "git+https://github.com/LightconeResearch/Prism.git"],
+                     "git+https://github.com/LightconeResearch/Prism.git@setup"],
                     capture_output=True,
                     check=True,
                     env=env,
