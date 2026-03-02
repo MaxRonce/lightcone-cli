@@ -1228,11 +1228,6 @@ def target_add(name: str | None) -> None:
             type=int,
             default=resource_limits.get("max_concurrent_jobs", 8),
         )
-        config["max_node_hours_per_session"] = click.prompt(
-            "  Max node-hours per session",
-            type=int,
-            default=resource_limits.get("max_node_hours_per_session", 64),
-        )
 
     path = save_target(target_name, config)
     console.print(f"\n  [green]✓[/green] Created target '{target_name}' at {path}")
@@ -1299,11 +1294,6 @@ def target_edit(name: str) -> None:
             "  Max concurrent jobs",
             type=int,
             default=config.get("max_concurrent_jobs", 8),
-        )
-        config["max_node_hours_per_session"] = click.prompt(
-            "  Max node-hours per session",
-            type=int,
-            default=config.get("max_node_hours_per_session", 64),
         )
 
     path = save_target(name, config)
@@ -1551,12 +1541,6 @@ def _run_setup_wizard() -> list[Path]:
         )
         target_config["max_concurrent_jobs"] = max_concurrent
 
-        max_node_hours = click.prompt(
-            "  Max node-hours per session",
-            type=int,
-            default=resource_limits.get("max_node_hours_per_session", 64),
-        )
-        target_config["max_node_hours_per_session"] = max_node_hours
 
         path = save_target(target_name, target_config)
         saved_paths.append(path)

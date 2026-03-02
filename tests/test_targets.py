@@ -39,7 +39,6 @@ def sample_target() -> dict:
         "max_nodes": 4,
         "max_walltime_minutes": 360,
         "max_concurrent_jobs": 8,
-        "max_node_hours_per_session": 64,
     }
 
 
