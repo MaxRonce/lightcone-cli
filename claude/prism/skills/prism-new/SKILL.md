@@ -44,6 +44,8 @@ Stage banner: ANALYSIS STRUCTURE
 
 **Guidance on sub-analyses:** Analyses should only be split into multiple sub-analyses if each sub analysis genuinely has materially different inputs and outputs, and if the scope may be too broad if there is just one analysis; we overall want a sub-analysis to feel like it should genuinely be a self-contained product. For example, training + evaluation would typically be one analysis, because the product would be the trained and validated neural network estimator. When in doubt, opt for a single analysis at this stage. If it does need to be multi-stage, ask the user for confirmation and how to split it. For multi-stage analyses, make sure you confirm stage boundaries. See CLAUDE.md template for YAML structure.
 
+**One output per output.** Each output should be a single metric, a single plot, or a single artifact. Do not bundle multiple metrics into one output (e.g., "performance_metrics" containing accuracy, F1, and AUC). Each of those is its own output. Same for plots -- one figure per output.
+
 **Update asp.yaml** with `inputs` and `outputs` (extending the spec from Phase 1).
 
 ---
@@ -112,13 +114,9 @@ asp universe generate -n baseline
 
 ### Populate CLAUDE.md
 
-Read the existing `CLAUDE.md` (created by `prism init`). Replace the `## Analysis Details` section with project-specific content:
+Read the existing `CLAUDE.md` (created by `prism init`). Replace the `## Analysis Details` section with context that is NOT already visible in `asp.yaml`. The spec is the source of truth for structure, decisions, and evidence -- CLAUDE.md captures only what would be lost after `/clear`:
 
-- **Description**: from asp.yaml
-- **Structure**: for each section (top-level and sub-analyses), list decision IDs with labels and output IDs
-- **Key Decisions**: what each controls and its default
-- **Literature Support**: N insights from P papers, DOIs, which decisions they inform (or "No literature added during scoping")
-- **Domain Context**: important things the user explained during scoping -- data characteristics, constraints, why certain approaches were preferred. This is context that would be lost after `/clear`.
+- **Domain Context**: important things the user explained during scoping -- data characteristics, constraints, why certain approaches were preferred. This is conversational context not captured in the spec.
 - **Implementation Notes**: domain-specific guidance from the conversation (libraries, data formats, gotchas)
 
 ### Review with User
