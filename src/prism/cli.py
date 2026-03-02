@@ -1292,14 +1292,17 @@ def _run_setup_menu() -> None:
     console.print("  3. Edit a target")
     console.print("  4. Change default target")
     console.print("  5. Re-run setup wizard")
+    console.print("  6. Exit")
 
     choice = click.prompt(
         "\n  Select action",
-        type=click.Choice(["1", "2", "3", "4", "5"]),
-        default="1",
+        type=click.Choice(["1", "2", "3", "4", "5", "6"]),
+        default="6",
     )
 
-    if choice == "1":
+    if choice == "6":
+        return
+    elif choice == "1":
         _prompt_permission_tier()
     elif choice == "2":
         ctx = click.get_current_context()
@@ -1462,9 +1465,10 @@ def _run_setup_wizard() -> list[Path]:
         else:
             selected_qos = site.get("safe_defaults", {}).get("qos", "regular")
 
-        # --- Create only the selected target ---
+        # --- Target name ---
         nt_info = node_types.get(selected_nt, {})
-        target_name = f"{site_key}-{selected_nt}"
+        default_name = f"{site_key}-{selected_nt}"
+        target_name = click.prompt("  Target name", default=default_name)
 
         target_config: dict[str, Any] = {
             "site": site_key,

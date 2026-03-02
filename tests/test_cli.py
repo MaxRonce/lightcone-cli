@@ -238,8 +238,8 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # node_type=1(gpu), qos=2(debug)
-        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n"
+        # node_type=1(gpu), qos=2(debug), target_name=default
+        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
         assert "Default target: perlmutter-gpu" in result.output
@@ -299,8 +299,8 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # node_type=1(gpu), qos=2(debug)
-        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n"
+        # node_type=1(gpu), qos=2(debug), target_name=default
+        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 
@@ -410,6 +410,27 @@ class TestSetupCommand:
         import yaml
         config = yaml.safe_load(config_path.read_text())
         assert config["default_target"] == "perlmutter-gpu"
+
+    def test_setup_menu_exit(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
+        """Menu action 6 (exit) returns immediately. Also the default."""
+        targets_dir = tmp_path / "targets"
+        targets_dir.mkdir(parents=True)
+        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
+                            lambda: targets_dir)
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("default_target: local\n")
+        monkeypatch.setattr("prism.dagster.targets.get_config_path",
+                            lambda: config_path)
+
+        # Just press Enter — default is 6 (exit)
+        input_lines = "\n"
+        result = runner.invoke(main, ["setup"], input=input_lines)
+        assert result.exit_code == 0
+        assert "Prism Setup" in result.output
+        # Should NOT have entered the wizard
+        assert "Configure a remote" not in result.output
 
 
 class TestAutoTrigger:
