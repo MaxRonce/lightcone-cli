@@ -82,7 +82,7 @@ def _get_plugin_source_dir() -> Path | None:
 def main(ctx: click.Context) -> None:
     """Prism - ASP-compliant Agentic Layer CLI."""
     ctx.ensure_object(dict)
-    if ctx.invoked_subcommand in ("setup", "profiles"):
+    if ctx.invoked_subcommand in ("setup", "target"):
         return
     from prism.dagster.targets import get_config_path
     if not get_config_path().exists():
@@ -90,7 +90,7 @@ def main(ctx: click.Context) -> None:
             "\n[bold yellow]No execution environment configured.[/bold yellow]"
         )
         console.print(
-            "  Prism needs a default site configured before you can use it.\n"
+            "  Prism needs a default target configured before you can use it.\n"
         )
         ctx.invoke(setup)
 
@@ -104,7 +104,7 @@ def main(ctx: click.Context) -> None:
 @click.argument("directory", type=click.Path(path_type=Path), default=".")
 @click.option("--no-git", is_flag=True, help="Don't initialize git repository")
 @click.option("--no-venv", is_flag=True, help="Don't create Python virtual environment")
-@click.option("--site", "-s", default=None, help="Site for default compute profile")
+@click.option("--target", "-t", default=None, help="Execution target name")
 @click.option(
     "--permissions",
     type=click.Choice(["yolo", "recommended", "minimal"]),
@@ -113,7 +113,7 @@ def main(ctx: click.Context) -> None:
 )
 def init(
     directory: Path, no_git: bool, no_venv: bool,
-    site: str | None, permissions: str | None,
+    target: str | None, permissions: str | None,
 ) -> None:
     """Create a new ASP analysis project with full agentic scaffolding.
 
@@ -124,7 +124,7 @@ def init(
 
     Examples:
         prism init my-analysis
-        prism init my-analysis --site perlmutter
+        prism init my-analysis --target perlmutter-gpu
         prism init my-analysis --no-git --no-venv
     """
     # Check if this is already an ASP project
@@ -188,23 +188,25 @@ __pycache__/
     tier = _resolve_permission_tier(permissions)
     _create_claude_settings(directory, tier)
 
-    # Write prism.yaml project config — use --site flag, or fall back to
-    # the user's default site from ~/.prism/config.yaml
-    effective_site = site
-    if not effective_site:
+    # Write prism.yaml project config — use --target flag, or fall back to
+    # the user's default target from ~/.prism/config.yaml
+    effective_target = target
+    if not effective_target:
         from prism.dagster.targets import load_user_config
-        effective_site = load_user_config().get("default_site", "local")
-    _create_prism_config(directory, effective_site)
+        effective_target = load_user_config().get("default_target", "local")
+    _create_prism_config(directory, effective_target)
 
-    # If user explicitly passed --site, ensure it's been configured
-    if site and site != "local":
-        from prism.dagster.targets import load_site
-        if load_site(site) is None:
+    # If user explicitly passed --target, ensure it's been configured
+    if target and target != "local":
+        from prism.dagster.targets import load_target
+        if load_target(target) is None:
             console.print(
-                f"\n[yellow]Site [cyan]{site}[/cyan] "
+                f"\n[yellow]Target [cyan]{target}[/cyan] "
                 "is not configured yet.[/yellow]"
             )
-            _run_setup_wizard(site)
+            console.print(
+                "  Run [cyan]prism setup[/cyan] to configure execution targets."
+            )
 
     # Create virtual environment
     _create_venv(directory, no_venv)
@@ -214,8 +216,8 @@ __pycache__/
 
     # Print success message
     console.print(f"[green]✓[/green] Created ASP analysis project: [cyan]{directory}[/cyan]")
-    if site:
-        console.print(f"  Default site: [cyan]{site}[/cyan]")
+    if target:
+        console.print(f"  Target: [cyan]{target}[/cyan]")
 
     console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
     console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
@@ -369,19 +371,15 @@ def _create_claude_md(directory: Path) -> None:
     (directory / "CLAUDE.md").write_text(content)
 
 
-def _create_prism_config(directory: Path, site_name: str) -> None:
-    """Create prism.yaml with a default compute profile."""
+def _create_prism_config(directory: Path, target_name: str) -> None:
+    """Create prism.yaml with target reference."""
     config = {
-        "profiles": {
-            "default": {
-                "site": site_name,
-            }
-        }
+        "target": target_name,
     }
     (directory / "prism.yaml").write_text(
         yaml.dump(config, default_flow_style=False, sort_keys=False)
     )
-    console.print(f"[green]✓[/green] Created prism.yaml (default site: {site_name})")
+    console.print(f"[green]✓[/green] Created prism.yaml (target: {target_name})")
 
 
 
@@ -665,12 +663,12 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 @main.command()
 @click.argument("outputs", nargs=-1)
 @click.option("--universe", "-u", default=None, help="Universe to materialize for")
-@click.option("--profile", "-p", default=None, help="Compute profile name")
+@click.option("--target", "-t", default=None, help="Execution target name")
 @click.option("--no-build", is_flag=True, help="Skip automatic container image builds")
 def run(
     outputs: tuple[str, ...],
     universe: str | None,
-    profile: str | None,
+    target: str | None,
     no_build: bool,
 ) -> None:
     """Materialize ASP outputs via Dagster.
@@ -684,42 +682,37 @@ def run(
         prism run accuracy                  # specific output
         prism run --universe baseline       # specific universe
         prism run accuracy -u baseline      # specific output + universe
-        prism run --profile perlmutter      # run on SLURM
+        prism run --target perlmutter-gpu   # run on SLURM
         prism run --no-build                # skip container builds
     """
     from prism.dagster.assets import build_definitions
-    from prism.dagster.profiles import load_profiles, resolve_profile
-    from prism.dagster.targets import load_site, load_user_config
+    from prism.dagster.targets import load_target
 
     project_path = Path.cwd()
     if not (project_path / "asp.yaml").exists():
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
         raise SystemExit(1)
 
-    # Resolve profile
-    profile_name = profile or "default"
-    profiles = load_profiles(project_path)
-    profile_data = profiles.get(profile_name, {})
+    # Resolve target: --target flag > prism.yaml > default from user config
+    target_name = target
+    if not target_name:
+        prism_yaml = project_path / "prism.yaml"
+        if prism_yaml.exists():
+            with open(prism_yaml) as f:
+                prism_data = yaml.safe_load(f) or {}
+            target_name = prism_data.get("target")
+        if not target_name:
+            from prism.dagster.targets import load_user_config
+            target_name = load_user_config().get("default_target")
 
-    # Determine site
-    site_name = profile_data.get("site")
-    if not site_name:
-        user_config = load_user_config()
-        site_name = user_config.get("default_site")
-
-    # Load site and resolve
-    profile_config = None
-    if site_name:
-        if site_name == "local":
-            profile_config = resolve_profile(profile_data, {"backend": "local"})
-        else:
-            site_config = load_site(site_name)
-            if site_config:
-                profile_config = resolve_profile(profile_data, site_config)
+    # Load target config directly — no merging
+    target_config = None
+    if target_name and target_name != "local":
+        target_config = load_target(target_name)
 
     universe_id = universe or "baseline"
     defs = build_definitions(
-        project_path, profile_config=profile_config, universe_id=universe_id,
+        project_path, target_config=target_config, universe_id=universe_id,
         no_build=no_build,
     )
 
@@ -1002,124 +995,277 @@ def dev(port: int, universe: str) -> None:
 
 
 # =============================================================================
-# Profiles command
+# Target command
 # =============================================================================
 
 
 @main.group(invoke_without_command=True)
+@click.option("--set", "set_target", default=None, help="Set project target")
+@click.option("--list", "list_flag", is_flag=True, help="List available targets")
+@click.option("--show", "show_name", default=None, help="Show a target's config")
 @click.pass_context
-def profiles(ctx: click.Context) -> None:
-    """List and manage compute profiles for this project."""
+def target(
+    ctx: click.Context,
+    set_target: str | None,
+    list_flag: bool,
+    show_name: str | None,
+) -> None:
+    """Show or manage execution targets for this project."""
     if ctx.invoked_subcommand is not None:
         return
 
-    from prism.dagster.profiles import load_profiles
+    from prism.dagster.targets import list_targets, load_target
 
-    project_path = Path.cwd()
-    profile_data = load_profiles(project_path)
-    if not profile_data:
-        console.print("\n  No compute profiles configured yet.")
+    if set_target:
+        # Update target key in prism.yaml
+        project_path = Path.cwd()
+        prism_yaml = project_path / "prism.yaml"
+        if not prism_yaml.exists():
+            console.print("[red]Error:[/red] No prism.yaml found. Run 'prism init' first.")
+            raise SystemExit(1)
+
+        # Verify target exists (or is "local")
+        if set_target != "local" and load_target(set_target) is None:
+            console.print(f"[red]Error:[/red] No configured target '{set_target}'.")
+            console.print(
+                f"  Available: {', '.join(list_targets()) or 'none'}"
+            )
+            raise SystemExit(1)
+
+        with open(prism_yaml) as f:
+            data = yaml.safe_load(f) or {}
+        data["target"] = set_target
+        with open(prism_yaml, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        console.print(f"[green]✓[/green] Project target set to '{set_target}'")
+        return
+
+    if show_name:
+        config = load_target(show_name)
+        if config is None:
+            console.print(f"[red]Error:[/red] No configured target '{show_name}'.")
+            raise SystemExit(1)
+        console.print(f"[bold]Target: {show_name}[/bold]\n")
+        console.print(yaml.dump(config, default_flow_style=False, sort_keys=False))
+        return
+
+    if list_flag:
+        from prism.dagster.targets import load_user_config
+        saved = list_targets()
+        user_config = load_user_config()
+        default = user_config.get("default_target", "")
+
+        console.print("[bold]Available targets:[/bold]")
+        local_marker = " [green](default)[/green]" if default == "local" else ""
+        console.print(f"  - local  (built-in){local_marker}")
+        if saved:
+            for t in saved:
+                marker = " [green](default)[/green]" if t == default else ""
+                console.print(f"  - {t}{marker}")
+        else:
+            console.print("  [dim](no additional targets configured)[/dim]")
         console.print(
-            "  Run [cyan]prism profiles add <name>[/cyan] "
-            "to create one.\n"
+            "\nRun [cyan]prism target add[/cyan] to create a new target."
         )
         return
 
-    # Get project name from asp.yaml
-    asp_yaml = project_path / "asp.yaml"
-    project_name = project_path.name
-    if asp_yaml.exists():
-        with open(asp_yaml) as f:
-            asp_data = yaml.safe_load(f) or {}
-        project_name = asp_data.get("name", project_name)
-
-    click.echo(f"\n  {project_name} — Compute Profiles\n")
-    click.echo(f"  {'PROFILE':<14}{'SITE':<14}{'QOS':<10}{'NODES':<7}{'TIME'}")
-    for name, prof in profile_data.items():
-        site = prof.get("site", "—")
-        qos = prof.get("qos", "—")
-        nodes = prof.get("nodes", "—")
-        time_limit = prof.get("time_limit", "—")
-        click.echo(f"  {name:<14}{site:<14}{qos:<10}{str(nodes):<7}{time_limit}")
-    click.echo("\n  Use: prism run --profile <name>\n")
-
-
-@profiles.command()
-@click.argument("name")
-def add(name: str) -> None:
-    """Add a compute profile to this project."""
-    from prism.dagster.sites import get_site_defaults
-    from prism.dagster.targets import load_site, load_user_config
-
+    # Default: show current project target
     project_path = Path.cwd()
     prism_yaml = project_path / "prism.yaml"
     if not prism_yaml.exists():
-        click.echo("No prism.yaml found. Run 'prism init' first.")
-        raise SystemExit(1)
+        console.print("No prism.yaml found. Run [cyan]prism init[/cyan] first.")
+        return
 
     with open(prism_yaml) as f:
         data = yaml.safe_load(f) or {}
+    current = data.get("target", "not set")
+    console.print(f"  Current target: [cyan]{current}[/cyan]")
 
-    profiles_data = data.setdefault("profiles", {})
+    # Check if it's configured
+    if current != "local" and current != "not set":
+        config = load_target(current)
+        if config:
+            console.print(f"  Backend: {config.get('backend', 'unknown')}")
+            conn = config.get("connection", {})
+            if conn.get("hostname"):
+                console.print(f"  Host: {conn['hostname']}")
+        else:
+            console.print("  [yellow]Warning: target not found in ~/.prism/targets/[/yellow]")
+    console.print("\n  Use [cyan]prism target --set <name>[/cyan] to change.")
 
-    # Determine default site from existing profiles or user config
-    existing_site = None
-    if "default" in profiles_data:
-        existing_site = profiles_data["default"].get("site")
-    if not existing_site:
-        user_config = load_user_config()
-        existing_site = user_config.get("default_site", "local")
 
-    site_name = click.prompt("  Site", default=existing_site)
+@target.command("add")
+@click.argument("name", required=False)
+def target_add(name: str | None) -> None:
+    """Create a new execution target."""
+    from prism.dagster.sites import get_site_defaults, list_known_sites
+    from prism.dagster.targets import save_target
 
-    profile: dict[str, Any] = {"site": site_name}
+    console.print("\n[bold]Create New Target[/bold]\n")
 
-    # Load site info for QOS options
-    site_config = load_site(site_name)
-    site_defaults = get_site_defaults(site_name)
+    # --- Site selection ---
+    known = list_known_sites()
+    hpc_sites = [(k, d) for k, d in known if k != "local"]
 
-    # QOS selection
-    qos_options = {}
-    if site_defaults and site_defaults.get("qos_options"):
-        qos_options = site_defaults["qos_options"]
+    console.print("  [bold]Site type:[/bold]")
+    console.print("    1. Local (Docker)")
+    for i, (_key, display) in enumerate(hpc_sites, 2):
+        console.print(f"    {i}. {display}")
 
-    if qos_options:
-        click.echo("  QOS:")
-        qos_list = list(qos_options.items())
-        for i, (qos_key, qos_info) in enumerate(qos_list, 1):
-            click.echo(f"    {i}. {qos_key} — {qos_info['description']}")
-        qos_choices = [str(i) for i in range(1, len(qos_list) + 1)]
-        choice = click.prompt(
-            "  Select QOS",
-            type=click.Choice(qos_choices),
-            default="1",
-        )
-        profile["qos"] = qos_list[int(choice) - 1][0]
+    choices = [str(i) for i in range(1, len(hpc_sites) + 2)]
+    choice = click.prompt(
+        "\n  Select site type",
+        type=click.Choice(choices),
+        default="1",
+    )
+
+    if choice == "1":
+        # Local target
+        target_name = name or "local"
+        config: dict[str, Any] = {
+            "site": "local",
+            "backend": "local",
+            "connection": {},
+        }
     else:
-        qos = click.prompt("  QOS", default="")
+        site_key = hpc_sites[int(choice) - 2][0]
+        site = get_site_defaults(site_key) or {}
+        hostname = site.get("connection", {}).get("hostname", "")
+
+        # --- Connection ---
+        username = click.prompt(
+            "  Username",
+            default=os.environ.get("USER", ""),
+        )
+        account = click.prompt("  Account/allocation")
+
+        # --- Container runtime ---
+        site_runtimes = site.get("container_runtimes", [])
+        if len(site_runtimes) > 1:
+            console.print("\n  [bold]Container runtime:[/bold]")
+            for i, rt in enumerate(site_runtimes, 1):
+                console.print(f"    {i}. {rt}")
+            rt_choices = [str(i) for i in range(1, len(site_runtimes) + 1)]
+            rt_idx = click.prompt(
+                "  Select runtime",
+                type=click.Choice(rt_choices),
+                default="1",
+            )
+            container_runtime = site_runtimes[int(rt_idx) - 1]
+        elif site_runtimes:
+            container_runtime = site_runtimes[0]
+        else:
+            container_runtime = site.get(
+                "scheduler", {},
+            ).get("container_runtime", "docker")
+
+        # --- Node type selection ---
+        node_types = site.get("node_types", {})
+        if node_types:
+            console.print("\n  [bold]Node type:[/bold]")
+            nt_list = list(node_types.items())
+            for i, (nt_key, nt_info) in enumerate(nt_list, 1):
+                console.print(f"    {i}. {nt_key} — {nt_info.get('description', '')}")
+            nt_choices = [str(i) for i in range(1, len(nt_list) + 1)]
+            nt_idx = click.prompt(
+                "  Select node type",
+                type=click.Choice(nt_choices),
+                default="1",
+            )
+            nt_key, nt_info = nt_list[int(nt_idx) - 1]
+            constraint = nt_info.get("constraint", nt_key)
+        else:
+            nt_key = "default"
+            constraint = ""
+
+        target_name = name or f"{site_key}-{nt_key}"
+
+        # QOS selection
+        qos_options = site.get("qos_options", {})
+        qos = "regular"
+        if qos_options:
+            console.print("\n  [bold]QOS:[/bold]")
+            qos_list = list(qos_options.items())
+            for i, (qos_key, qos_info) in enumerate(qos_list, 1):
+                console.print(f"    {i}. {qos_key} — {qos_info.get('description', '')}")
+            qos_choices = [str(i) for i in range(1, len(qos_list) + 1)]
+            qos_idx = click.prompt(
+                "  Select QOS",
+                type=click.Choice(qos_choices),
+                default="1",
+            )
+            qos = qos_list[int(qos_idx) - 1][0]
+
+        resource_limits = site.get("resource_limits", {})
+        config = {
+            "site": site_key,
+            "backend": site.get("backend", "slurm"),
+            "connection": {
+                "hostname": hostname,
+                "username": username,
+            },
+            "account": account,
+            "container_runtime": container_runtime,
+            "constraint": constraint,
+            "qos": qos,
+        }
+        # Stamp resource limits
+        for key in ("max_nodes", "max_walltime_minutes",
+                     "max_concurrent_jobs", "max_node_hours_per_session"):
+            if key in resource_limits:
+                config[key] = resource_limits[key]
+
+    path = save_target(target_name, config)
+    console.print(f"\n  [green]✓[/green] Created target '{target_name}' at {path}")
+
+
+@target.command("edit")
+@click.argument("name")
+def target_edit(name: str) -> None:
+    """Edit an existing execution target."""
+    from prism.dagster.targets import load_target, save_target
+
+    config = load_target(name)
+    if config is None:
+        console.print(f"[red]Error:[/red] No configured target '{name}'.")
+        raise SystemExit(1)
+
+    console.print(f"\n[bold]Edit Target: {name}[/bold]")
+    console.print("  Press Enter to keep current value.\n")
+
+    # Edit each field
+    backend = click.prompt("  Backend", default=config.get("backend", "local"))
+    config["backend"] = backend
+
+    conn = config.get("connection", {})
+    if backend != "local":
+        hostname = click.prompt("  Hostname", default=conn.get("hostname", ""))
+        username = click.prompt("  Username", default=conn.get("username", ""))
+        config["connection"] = {"hostname": hostname, "username": username}
+
+        account = click.prompt("  Account", default=config.get("account", ""))
+        if account:
+            config["account"] = account
+
+        runtime = click.prompt(
+            "  Container runtime",
+            default=config.get("container_runtime", "docker"),
+        )
+        config["container_runtime"] = runtime
+
+        constraint = click.prompt(
+            "  Constraint",
+            default=config.get("constraint", ""),
+        )
+        if constraint:
+            config["constraint"] = constraint
+
+        qos = click.prompt("  QOS", default=config.get("qos", ""))
         if qos:
-            profile["qos"] = qos
+            config["qos"] = qos
 
-    # Nodes
-    default_nodes = 1
-    if site_config and "defaults" in site_config:
-        default_nodes = site_config["defaults"].get("nodes", 1)
-    nodes = click.prompt("  Nodes", default=default_nodes, type=int)
-    profile["nodes"] = nodes
-
-    # Time limit
-    default_time = "30m"
-    if site_config and "defaults" in site_config:
-        default_time = str(site_config["defaults"].get("time_limit", "30m"))
-    time_limit = click.prompt("  Time limit", default=default_time)
-    profile["time_limit"] = time_limit
-
-    # Save
-    profiles_data[name] = profile
-    with open(prism_yaml, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    click.echo(f"\n  Added profile '{name}' to prism.yaml")
+    path = save_target(name, config)
+    console.print(f"\n  [green]✓[/green] Updated target '{name}' at {path}")
 
 
 # =============================================================================
@@ -1127,23 +1273,23 @@ def add(name: str) -> None:
 # =============================================================================
 
 
-def _run_setup_wizard(name: str | None = None) -> Path:
+def _run_setup_wizard() -> list[Path]:
     """Run the interactive setup wizard.
 
-    Prompts for site selection, username, account, and container runtime.
-    Compute defaults (node type, QOS, nodes, time limit) are populated
-    automatically from the site's safe defaults — those belong in profiles.
-
-    Returns the path where the site config was saved.
+    Creates one target per node type for HPC sites, plus a local target.
+    Returns the list of paths where target configs were saved.
     """
     from prism.dagster.sites import get_site_defaults, list_known_sites
-    from prism.dagster.targets import load_user_config, save_site, save_user_config
+    from prism.dagster.targets import load_user_config, save_target, save_user_config
 
-    console.print("\n[bold]Prism Setup — Site Configuration[/bold]")
+    console.print("\n[bold]Prism Setup — Target Configuration[/bold]")
     console.print(
-        "  These settings are stored in [cyan]~/.prism/[/cyan] and can be "
-        "overridden per-project via compute profiles.\n"
+        "  These settings are stored in [cyan]~/.prism/targets/[/cyan] and "
+        "referenced by projects via prism.yaml.\n"
     )
+
+    saved_paths: list[Path] = []
+    default_target = "local"
 
     # --- Configure HPC? ---
     configure_hpc = click.confirm(
@@ -1151,15 +1297,7 @@ def _run_setup_wizard(name: str | None = None) -> Path:
         default=False,
     )
 
-    if not configure_hpc:
-        site_name = name or "local"
-        site_config: dict[str, Any] = {
-            "site": "local",
-            "backend": "local",
-            "connection": {},
-            "defaults": {},
-        }
-    else:
+    if configure_hpc:
         # --- HPC site selection ---
         known = list_known_sites()
         hpc_sites = [(k, d) for k, d in known if k != "local"]
@@ -1212,101 +1350,127 @@ def _run_setup_wizard(name: str | None = None) -> Path:
                 "scheduler", {},
             ).get("container_runtime", "docker")
 
-        site_name = name or site_key or "default"
-        site_config = {
-            "site": site_key,
-            "backend": site.get("backend", "slurm"),
-            "connection": {
-                "hostname": hostname,
-                "username": username,
-            },
-            "account": account,
-            "container_runtime": container_runtime,
-            "defaults": site.get("safe_defaults", {}),
-        }
+        # --- Create one target per node type ---
+        node_types = site.get("node_types", {})
+        resource_limits = site.get("resource_limits", {})
+        first_target = None
 
-    # --- Save site and set as default ---
-    path = save_site(site_name, site_config)
+        for nt_key, nt_info in node_types.items():
+            target_name = f"{site_key}-{nt_key}"
+            if first_target is None:
+                first_target = target_name
+
+            target_config: dict[str, Any] = {
+                "site": site_key,
+                "backend": site.get("backend", "slurm"),
+                "connection": {
+                    "hostname": hostname,
+                    "username": username,
+                },
+                "account": account,
+                "container_runtime": container_runtime,
+                "constraint": nt_info.get("constraint", nt_key),
+                "qos": site.get("safe_defaults", {}).get("qos", "regular"),
+            }
+            # Stamp resource limits
+            for rk in ("max_nodes", "max_walltime_minutes",
+                        "max_concurrent_jobs", "max_node_hours_per_session"):
+                if rk in resource_limits:
+                    target_config[rk] = resource_limits[rk]
+
+            path = save_target(target_name, target_config)
+            saved_paths.append(path)
+            console.print(f"  [green]✓[/green] Created target: {target_name}")
+
+        default_target = first_target or "local"
+
+    # --- Always create local target ---
+    local_config: dict[str, Any] = {
+        "site": "local",
+        "backend": "local",
+        "connection": {},
+    }
+    path = save_target("local", local_config)
+    saved_paths.append(path)
+    console.print("  [green]✓[/green] Created target: local")
+
+    # --- Set default ---
     user_config = load_user_config()
-    user_config["default_site"] = site_name
+    user_config["default_target"] = default_target
     save_user_config(user_config)
-    console.print(f"\n  [green]✓[/green] Default site: {site_name}")
+    console.print(f"\n  [green]✓[/green] Default target: {default_target}")
 
-    return path
+    return saved_paths
 
 
 @main.command()
-@click.argument("name", required=False)
-@click.option("--list", "list_flag", is_flag=True, help="List configured sites")
-@click.option("--show", "show_name", default=None, help="Show a site's config")
-@click.option("--default", "set_default", default=None, help="Set default site")
+@click.option("--list", "list_flag", is_flag=True, help="List configured targets")
+@click.option("--show", "show_name", default=None, help="Show a target's config")
+@click.option("--default", "set_default", default=None, help="Set default target")
 def setup(
-    name: str | None, list_flag: bool,
+    list_flag: bool,
     show_name: str | None, set_default: str | None,
 ) -> None:
-    """Set up or manage site configurations.
+    """Set up execution targets (first-time experience).
 
     Configures connection details and container runtime for remote
-    execution backends (SLURM). Compute settings (node type, QOS,
-    nodes, time limit) are populated from safe site defaults and
-    can be customized per-project via ``prism profiles add``.
+    execution backends (SLURM). Creates one target per node type.
 
-    Settings are stored at the user level (~/.prism/sites/) and
-    referenced by compute profiles in prism.yaml.
+    Settings are stored at the user level (~/.prism/targets/) and
+    referenced by projects via prism.yaml.
 
     Examples:
-        prism setup                    # interactive wizard
-        prism setup perlmutter         # configure a named site
-        prism setup --list             # list configured sites
-        prism setup --show perlmutter  # show a site's config
-        prism setup --default local    # change default site
+        prism setup                        # interactive wizard
+        prism setup --list                 # list configured targets
+        prism setup --show perlmutter-gpu  # show a target's config
+        prism setup --default local        # change default target
     """
     if set_default:
-        from prism.dagster.targets import load_site, load_user_config, save_user_config
-        # Validate site exists (or is "local")
+        from prism.dagster.targets import load_target, load_user_config, save_user_config
+        # Validate target exists (or is "local")
         if set_default != "local":
-            site_config = load_site(set_default)
-            if site_config is None:
-                console.print(f"[red]Error:[/red] No configured site '{set_default}'.")
+            target_config = load_target(set_default)
+            if target_config is None:
+                console.print(f"[red]Error:[/red] No configured target '{set_default}'.")
                 raise SystemExit(1)
         user_config = load_user_config()
-        user_config["default_site"] = set_default
+        user_config["default_target"] = set_default
         save_user_config(user_config)
-        console.print(f"[green]✓[/green] Default site set to '{set_default}'")
+        console.print(f"[green]✓[/green] Default target set to '{set_default}'")
         return
 
     if show_name:
-        from prism.dagster.targets import load_site
-        config = load_site(show_name)
+        from prism.dagster.targets import load_target
+        config = load_target(show_name)
         if config is None:
-            console.print(f"[red]Error:[/red] No configured site '{show_name}'.")
+            console.print(f"[red]Error:[/red] No configured target '{show_name}'.")
             raise SystemExit(1)
-        console.print(f"[bold]Site: {show_name}[/bold]\n")
+        console.print(f"[bold]Target: {show_name}[/bold]\n")
         console.print(yaml.dump(config, default_flow_style=False, sort_keys=False))
         return
 
     if list_flag:
-        from prism.dagster.targets import list_sites, load_user_config
-        saved = list_sites()
+        from prism.dagster.targets import list_targets, load_user_config
+        saved = list_targets()
         user_config = load_user_config()
-        default = user_config.get("default_site", "")
+        default = user_config.get("default_target", "")
 
-        console.print("[bold]Configured sites:[/bold]")
+        console.print("[bold]Configured targets:[/bold]")
         # Always show local
         local_marker = " [green](default)[/green]" if default == "local" else ""
         console.print(f"  - local  (built-in){local_marker}")
         if saved:
-            for s in saved:
-                marker = " [green](default)[/green]" if s == default else ""
-                console.print(f"  - {s}{marker}")
-        elif not saved:
-            console.print("  [dim](no additional sites configured)[/dim]")
+            for t in saved:
+                marker = " [green](default)[/green]" if t == default else ""
+                console.print(f"  - {t}{marker}")
+        else:
+            console.print("  [dim](no additional targets configured)[/dim]")
         console.print(
-            "\nRun [cyan]prism setup[/cyan] to configure a new site."
+            "\nRun [cyan]prism target add[/cyan] to create a new target."
         )
         return
 
-    _run_setup_wizard(name)
+    _run_setup_wizard()
 
 
 if __name__ == "__main__":

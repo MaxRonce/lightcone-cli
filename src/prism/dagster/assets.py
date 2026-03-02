@@ -153,36 +153,36 @@ def _build_single_asset(
 
 def build_definitions(
     project_path: Path,
-    profile_config: dict[str, Any] | None = None,
+    target_config: dict[str, Any] | None = None,
     universe_id: str = "baseline",
     no_build: bool = False,
 ) -> dg.Definitions:
     """Build complete Dagster Definitions from an ASP project.
 
     This is the main entry point for the Dagster integration.  When a SLURM
-    profile is provided, container images are automatically built (podman-hpc)
+    target is provided, container images are automatically built (podman-hpc)
     or pulled (shifter) before asset definitions are constructed.
     """
     spec = load_yaml(project_path / "asp.yaml")
     project_name = spec.get("name") or project_path.name
 
-    # Build runner config from resolved profile
-    target_config = None
+    # Build runner config from target
+    runner_config = None
     container_runtime: str | None = None
     backend = "docker"
 
-    if profile_config:
-        backend = profile_config.get("backend", "docker")
-        container_runtime = profile_config.get("container_runtime")
-        # Transform flat profile_config into the shape the runner expects
-        target_config = {"connection": profile_config.get("connection", {})}
+    if target_config:
+        backend = target_config.get("backend", "docker")
+        container_runtime = target_config.get("container_runtime")
+        # Transform flat target_config into the shape the runner expects
+        runner_config = {"connection": target_config.get("connection", {})}
         scheduler = {}
         for key in ("account", "qos", "constraint", "node_type",
                      "container_runtime", "nodes", "time_limit"):
-            if profile_config.get(key) is not None:
-                scheduler[key] = profile_config[key]
+            if target_config.get(key) is not None:
+                scheduler[key] = target_config[key]
         if scheduler:
-            target_config["scheduler"] = scheduler
+            runner_config["scheduler"] = scheduler
 
     # Resolve analysis-level container spec to a string for the runner.
     # For SLURM targets this triggers podman-hpc build/migrate or
@@ -196,12 +196,12 @@ def build_definitions(
         default_container = raw_container if isinstance(raw_container, str) else None
 
     # Build runner from target config
-    if target_config:
+    if runner_config:
         runner = ASPContainerRunner(
             project_root=str(project_path),
             backend=backend,
             default_container=default_container,
-            target_config=target_config,
+            target_config=runner_config,
         )
     else:
         runner = ASPContainerRunner(

@@ -103,23 +103,23 @@ class TestIntegration:
         assert result.exit_code == 0
         assert "cleaned" in result.output or "pending" in result.output
 
-    def test_site_save_and_load(self, tmp_path, monkeypatch):
-        """Site config round-trip."""
-        sites = tmp_path / "sites"
-        sites.mkdir()
-        monkeypatch.setattr("prism.dagster.targets.get_sites_dir", lambda: sites)
+    def test_target_save_and_load(self, tmp_path, monkeypatch):
+        """Target config round-trip."""
+        targets = tmp_path / "targets"
+        targets.mkdir()
+        monkeypatch.setattr("prism.dagster.targets.get_targets_dir", lambda: targets)
 
-        from prism.dagster.targets import list_sites, load_site, save_site
+        from prism.dagster.targets import list_targets, load_target, save_target
 
-        save_site("test-site", {
+        save_target("test-target", {
             "site": "test-site",
             "backend": "slurm",
         })
 
-        loaded = load_site("test-site")
+        loaded = load_target("test-target")
         assert loaded is not None
         assert loaded["backend"] == "slurm"
-        assert list_sites() == ["test-site"]
+        assert list_targets() == ["test-target"]
 
     def test_io_manager_paths(self, project_dir):
         """IO manager should produce correct paths."""
