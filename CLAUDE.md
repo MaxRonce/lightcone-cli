@@ -50,4 +50,4 @@ mypy src/
 - The `prism` CLI handles agent/execution operations (init with scaffolding, remote, canvas)
 - The `asp` CLI handles spec operations (validate, info, universe, viz, schema, paper)
 - Skills are branded as `/prism-new`, `/prism-build`, `/prism-verify`
-- Site configs are stored in `~/.prism/sites/`
+- Target configs are stored in `~/.prism/targets/`
