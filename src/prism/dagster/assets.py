@@ -24,7 +24,7 @@ def _resolve_container(
 
     When *container_runtime* is set (i.e. we are targeting SLURM), uses
     ``resolve_container_for_slurm`` which handles podman-hpc build/migrate
-    and shifterimg pull automatically.  Otherwise falls back to the
+    and podman-hpc migrate automatically.  Otherwise falls back to the
     default Docker-based ``resolve_container_spec``.
     """
     if container_runtime:
@@ -153,36 +153,40 @@ def _build_single_asset(
 
 def build_definitions(
     project_path: Path,
-    target: str | None = None,
+    target_config: dict[str, Any] | None = None,
     universe_id: str = "baseline",
     no_build: bool = False,
 ) -> dg.Definitions:
     """Build complete Dagster Definitions from an ASP project.
 
     This is the main entry point for the Dagster integration.  When a SLURM
-    target is specified, container images are automatically built (podman-hpc)
-    or pulled (shifter) before asset definitions are constructed.
+    target is provided, container images are automatically built (podman-hpc)
+    or pulled before asset definitions are constructed.
     """
-    from prism.dagster.targets import load_target
-
     spec = load_yaml(project_path / "asp.yaml")
     project_name = spec.get("name") or project_path.name
 
-    # Determine the container runtime from the target config (if SLURM).
-    target_config = None
+    # Build runner config from target
+    runner_config = None
     container_runtime: str | None = None
-    if target:
-        target_config = load_target(target)
-        if target_config is None:
-            raise ValueError(f"Unknown target: {target}")
-        if target_config.get("backend") == "slurm":
-            container_runtime = (
-                target_config.get("scheduler", {}).get("container_runtime", "podman-hpc")
-            )
+    backend = "docker"
+
+    if target_config:
+        backend = target_config.get("backend", "docker")
+        container_runtime = target_config.get("container_runtime")
+        # Transform flat target_config into the shape the runner expects
+        runner_config = {"connection": target_config.get("connection", {})}
+        scheduler = {}
+        for key in ("account", "qos", "constraint", "node_type",
+                     "container_runtime", "nodes", "time_limit"):
+            if target_config.get(key) is not None:
+                scheduler[key] = target_config[key]
+        if scheduler:
+            runner_config["scheduler"] = scheduler
 
     # Resolve analysis-level container spec to a string for the runner.
     # For SLURM targets this triggers podman-hpc build/migrate or
-    # shifterimg pull automatically.
+    # podman-hpc migrate automatically.
     raw_container = spec.get("container")
     if not no_build:
         default_container = _resolve_container(
@@ -192,12 +196,12 @@ def build_definitions(
         default_container = raw_container if isinstance(raw_container, str) else None
 
     # Build runner from target config
-    if target_config:
+    if runner_config:
         runner = ASPContainerRunner(
             project_root=str(project_path),
-            backend=target_config.get("backend", "docker"),
+            backend=backend,
             default_container=default_container,
-            target_config=target_config,
+            target_config=runner_config,
         )
     else:
         runner = ASPContainerRunner(

@@ -112,13 +112,13 @@ class TestIntegration:
         from prism.dagster.targets import list_targets, load_target, save_target
 
         save_target("test-target", {
-            "name": "test-target",
-            "backend": "docker",
+            "site": "test-site",
+            "backend": "slurm",
         })
 
         loaded = load_target("test-target")
         assert loaded is not None
-        assert loaded["backend"] == "docker"
+        assert loaded["backend"] == "slurm"
         assert list_targets() == ["test-target"]
 
     def test_io_manager_paths(self, project_dir):

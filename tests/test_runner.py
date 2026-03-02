@@ -1,10 +1,7 @@
 """Tests for ASP Container Runner."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from prism.dagster.runner import (
     ASPContainerRunner,
@@ -250,26 +247,6 @@ class TestGenerateSbatchScript:
         assert "--mpi" in script
         assert "--nccl" in script
 
-    def test_shifter_basic(self, tmp_path):
-        script = generate_sbatch_script(
-            command="python scripts/train.py",
-            container="ghcr.io/proj/ml:latest",
-            container_runtime="shifter",
-            project_root=tmp_path,
-            output_id="trained_model",
-            universe_id="baseline",
-            resources={"cpus": 4, "memory": "16GB"},
-            scheduler_config={"account": "m1234", "partition": "gpu"},
-        )
-        assert "#!/bin/bash" in script
-        assert "#SBATCH --job-name=prism_trained_model_baseline" in script
-        assert "#SBATCH --account=m1234" in script
-        assert "#SBATCH --image=ghcr.io/proj/ml:latest" in script
-        assert "srun shifter" in script
-        assert "python scripts/train.py" in script
-        # No podman-hpc for shifter
-        assert "podman-hpc" not in script
-
     def test_no_container(self, tmp_path):
         script = generate_sbatch_script(
             command="python scripts/train.py",
@@ -282,7 +259,6 @@ class TestGenerateSbatchScript:
             scheduler_config={"account": "m1234"},
         )
         assert "podman-hpc" not in script
-        assert "shifter" not in script
         assert "python scripts/train.py" in script
 
     def test_output_and_error_files(self, tmp_path):
@@ -441,7 +417,7 @@ class TestSlurmRunner:
             project_root=str(tmp_path),
             backend="slurm",
             target_config={
-                "scheduler": {"container_runtime": "shifter", "account": "m1234"},
+                "scheduler": {"container_runtime": "podman-hpc", "account": "m1234"},
             },
         )
         result = runner.execute(
@@ -483,39 +459,6 @@ class TestSlurmRunner:
         content = script_path.read_text()
         assert "#!/bin/bash" in content
         assert "podman-hpc run" in content
-
-    @patch("prism.dagster.runner.subprocess.run")
-    def test_slurm_shifter_creates_correct_script(self, mock_run, tmp_path):
-        """Verify that shifter scripts use #SBATCH --image and srun shifter."""
-        mock_submit = MagicMock()
-        mock_submit.returncode = 1
-        mock_submit.stdout = ""
-        mock_submit.stderr = "error"
-        mock_run.return_value = mock_submit
-
-        runner = ASPContainerRunner(
-            project_root=str(tmp_path),
-            backend="slurm",
-            target_config={
-                "scheduler": {
-                    "container_runtime": "shifter",
-                    "account": "m1234",
-                },
-            },
-        )
-        runner.execute(
-            command="python scripts/eval.py",
-            output_id="accuracy",
-            universe_id="experiment1",
-            container="registry.nersc.gov/proj/analysis:v2",
-        )
-
-        script_path = tmp_path / "results" / ".slurm" / "accuracy_experiment1.sh"
-        assert script_path.exists()
-        content = script_path.read_text()
-        assert "#SBATCH --image=registry.nersc.gov/proj/analysis:v2" in content
-        assert "srun shifter" in content
-        assert "podman-hpc" not in content
 
     @patch("prism.dagster.runner.subprocess.run")
     def test_slurm_forwards_universe_and_params(self, mock_run, tmp_path):

@@ -82,6 +82,9 @@ class ASPContainerRunner:
         results_dir = self.project_root / "results" / universe_id
         results_dir.mkdir(parents=True, exist_ok=True)
 
+        if self.backend == "local":
+            return self._run_local(full_command, output_id, universe_id)
+
         if self.backend == "slurm":
             return self._run_slurm(
                 command=full_command,
@@ -417,12 +420,9 @@ def generate_sbatch_script(
 ) -> str:
     """Generate an sbatch script for a recipe execution.
 
-    Supports two container runtimes at NERSC:
-    - ``podman-hpc``: The recommended runtime on Perlmutter. Containers are
-      run via ``podman-hpc run`` with optional ``--gpu`` / ``--mpi`` flags.
-      Images must be pre-migrated (``podman-hpc migrate``).
-    - ``shifter``: Legacy runtime. Uses ``#SBATCH --image=`` and
-      ``srun shifter`` to execute inside the container.
+    Uses ``podman-hpc`` as the container runtime on Perlmutter. Containers are
+    run via ``podman-hpc run`` with optional ``--gpu`` / ``--mpi`` flags.
+    Images must be pre-migrated (``podman-hpc migrate``).
 
     If no container image is specified, the command runs directly (no
     container wrapping).
@@ -444,10 +444,6 @@ def generate_sbatch_script(
         resources, scheduler_config, resource_limits=resource_limits,
     )
 
-    # For Shifter, the image is specified as an SBATCH directive
-    if container_runtime == "shifter" and container:
-        directives.append(f"--image={container}")
-
     for d in directives:
         lines.append(f"#SBATCH {d}")
 
@@ -461,8 +457,6 @@ def generate_sbatch_script(
         lines.append(_podman_hpc_run_command(
             command, container, project_root, resources, scheduler_config,
         ))
-    elif container and container_runtime == "shifter":
-        lines.append(_shifter_run_command(command, resources))
     else:
         # No container — run directly
         lines.append(command)
@@ -514,15 +508,6 @@ def _podman_hpc_run_command(
     parts.extend(["sh", "-c", _shell_quote(command)])
 
     return " ".join(parts)
-
-
-def _shifter_run_command(command: str, resources: dict[str, Any]) -> str:
-    """Build a shifter invocation for use inside an sbatch script.
-
-    With Shifter the image is specified via ``#SBATCH --image=`` so
-    we only need ``srun shifter <command>`` here.
-    """
-    return f"srun shifter sh -c {_shell_quote(command)}"
 
 
 def _shell_quote(s: str) -> str:
