@@ -1,23 +1,15 @@
 # Decision Guide
 
-## E/N/U Classification
+## Decision Prioritization
 
-Classify every candidate decision before adding it to the spec.
-
-| Type | Name | In multiverse? | Meaning |
-|------|------|---------------|---------|
-| **E** | Principled Equivalence | **Yes** | Options expected to produce equivalent results. Genuinely arbitrary. |
-| **N** | Principled Nonequivalence | **No** -- fix it | One option is clearly better-justified. Including it dilutes signal. |
-| **U** | Uncertainty | **Yes**, flag it | Reasons to suspect non-equivalence but insufficient evidence to pick a winner. |
+Evaluate every candidate decision before adding it to the spec.
 
 **Flowchart:**
-1. Does literature/domain knowledge clearly favor one option? --> **Type N.** Fix it.
-2. Are the options expected to give similar results? --> **Type E.** Include all.
-3. Neither clear? --> **Type U.** Include, flag for careful interpretation.
+1. Does literature/domain knowledge clearly favor one option? --> Prefer that option as `default` and keep alternatives only if reviewer scrutiny is likely.
+2. Are the options expected to give similar results? --> Include alternatives if they are still useful for robustness checks.
+3. Neither clear? --> Include alternatives and record why uncertainty remains in `rationale`.
 
-**Type N exception:** If reviewer pushback is likely, fix the better option as default and include the weaker option as a secondary check.
-
-**Embed classification in the rationale field,** e.g.: `"Type U -- literature uses both 2.5 and 3 SD cutoffs with no consensus"`
+**Rationale guidance:** Document why options are included and what evidence/theory supports them, e.g.: `"Literature uses both 2.5 and 3 SD cutoffs with no consensus"`.
 
 ---
 
