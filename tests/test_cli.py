@@ -346,6 +346,71 @@ class TestSetupCommand:
         result = runner.invoke(main, ["setup", "--default", "nonexistent"])
         assert result.exit_code == 1
 
+    def test_setup_menu_shown_when_config_exists(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
+        """When config exists, setup shows the menu. Choosing 5 re-runs wizard."""
+        targets_dir = tmp_path / "targets"
+        targets_dir.mkdir(parents=True)
+        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
+                            lambda: targets_dir)
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("default_target: local\n")
+        monkeypatch.setattr("prism.dagster.targets.get_config_path",
+                            lambda: config_path)
+
+        # action 5 (re-run wizard), then wizard: no HPC
+        input_lines = "5\nn\n"
+        result = runner.invoke(main, ["setup"], input=input_lines)
+        assert result.exit_code == 0
+        assert "Change permission level" in result.output
+        assert "Default target: local" in result.output
+
+    def test_setup_menu_change_permissions(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
+        """Menu action 1 changes the permission tier."""
+        targets_dir = tmp_path / "targets"
+        targets_dir.mkdir(parents=True)
+        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
+                            lambda: targets_dir)
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("default_target: local\n")
+        monkeypatch.setattr("prism.dagster.targets.get_config_path",
+                            lambda: config_path)
+
+        # action 1, tier 2 (recommended)
+        input_lines = "1\n2\n"
+        result = runner.invoke(main, ["setup"], input=input_lines)
+        assert result.exit_code == 0
+
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        assert config["default_permission_tier"] == "recommended"
+
+    def test_setup_menu_change_default(
+        self, runner: CliRunner, tmp_path: Path, monkeypatch,
+    ):
+        """Menu action 4 changes the default target."""
+        targets_dir = tmp_path / "targets"
+        targets_dir.mkdir(parents=True)
+        (targets_dir / "perlmutter-gpu.yaml").write_text("site: perlmutter\n")
+        monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
+                            lambda: targets_dir)
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text("default_target: local\n")
+        monkeypatch.setattr("prism.dagster.targets.get_config_path",
+                            lambda: config_path)
+
+        # action 4, pick target 2 (perlmutter-gpu — local is 1)
+        input_lines = "4\n2\n"
+        result = runner.invoke(main, ["setup"], input=input_lines)
+        assert result.exit_code == 0
+
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        assert config["default_target"] == "perlmutter-gpu"
+
 
 class TestAutoTrigger:
     """Tests for the auto-trigger setup check."""

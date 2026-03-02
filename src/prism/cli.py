@@ -1272,6 +1272,67 @@ def target_edit(name: str) -> None:
 # =============================================================================
 
 
+def _run_setup_menu() -> None:
+    """Show the setup management menu when config already exists."""
+    from prism.dagster.targets import list_targets, load_user_config, save_user_config
+
+    user_config = load_user_config()
+    default = user_config.get("default_target", "local")
+    tier = user_config.get("default_permission_tier", "recommended")
+    targets = list_targets()
+    target_names = ["local"] + [t for t in targets if t != "local"]
+
+    console.print("\n[bold]Prism Setup[/bold]")
+    console.print(f"  Default target:    {default}")
+    console.print(f"  Permission level:  {tier}")
+    console.print(f"  Targets:           {', '.join(target_names)}")
+
+    console.print("\n  1. Change permission level")
+    console.print("  2. Add a target")
+    console.print("  3. Edit a target")
+    console.print("  4. Change default target")
+    console.print("  5. Re-run setup wizard")
+
+    choice = click.prompt(
+        "\n  Select action",
+        type=click.Choice(["1", "2", "3", "4", "5"]),
+        default="1",
+    )
+
+    if choice == "1":
+        _prompt_permission_tier()
+    elif choice == "2":
+        ctx = click.get_current_context()
+        ctx.invoke(target_add)
+    elif choice == "3":
+        console.print("\n  [bold]Targets:[/bold]")
+        for i, t in enumerate(target_names, 1):
+            console.print(f"    {i}. {t}")
+        idx = click.prompt(
+            "  Select target to edit",
+            type=click.Choice([str(i) for i in range(1, len(target_names) + 1)]),
+            default="1",
+        )
+        chosen = target_names[int(idx) - 1]
+        ctx = click.get_current_context()
+        ctx.invoke(target_edit, name=chosen)
+    elif choice == "4":
+        console.print("\n  [bold]Targets:[/bold]")
+        for i, t in enumerate(target_names, 1):
+            console.print(f"    {i}. {t}")
+        idx = click.prompt(
+            "  Select new default",
+            type=click.Choice([str(i) for i in range(1, len(target_names) + 1)]),
+            default="1",
+        )
+        chosen = target_names[int(idx) - 1]
+        user_config["default_target"] = chosen
+        save_user_config(user_config)
+        console.print(f"  [green]✓[/green] Default target: {chosen}")
+    elif choice == "5":
+        _run_setup_wizard()
+
+
 def _run_setup_wizard() -> list[Path]:
     """Run the interactive setup wizard.
 
@@ -1521,7 +1582,11 @@ def setup(
         )
         return
 
-    _run_setup_wizard()
+    from prism.dagster.targets import get_config_path
+    if get_config_path().exists():
+        _run_setup_menu()
+    else:
+        _run_setup_wizard()
 
 
 if __name__ == "__main__":
