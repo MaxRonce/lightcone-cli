@@ -757,10 +757,10 @@ def run(
 @click.option(
     "--runtime", "-r",
     type=click.Choice(["docker", "podman-hpc"]),
-    default="docker",
-    help="Container runtime to build with (default: docker)",
+    default=None,
+    help="Container runtime to build with (auto-detected from target config)",
 )
-def build(force: bool, runtime: str) -> None:
+def build(force: bool, runtime: str | None) -> None:
     """Build container images from Containerfile specs in asp.yaml.
 
     Scans the analysis specification for container build specs (both
@@ -768,12 +768,13 @@ def build(force: bool, runtime: str) -> None:
     Images are content-addressed — rebuilds only happen when the
     Containerfile or dependency files change.
 
-    For NERSC sites, use --runtime podman-hpc to build and migrate
-    images for compute nodes.
+    The container runtime is auto-detected from the project's target
+    config (prism.yaml → ~/.prism/targets/). Use --runtime to override.
 
     Examples:
-        prism build                      # build with docker
-        prism build --runtime podman-hpc # build + migrate for NERSC
+        prism build                      # auto-detect runtime from target
+        prism build --runtime podman-hpc # force podman-hpc
+        prism build --runtime docker     # force docker
         prism build --force              # rebuild all images
     """
     from asp.helpers import get_outputs, load_yaml
@@ -788,6 +789,24 @@ def build(force: bool, runtime: str) -> None:
     if not (project_path / "asp.yaml").exists():
         console.print("[red]Error:[/red] No asp.yaml found in current directory.")
         raise SystemExit(1)
+
+    # Resolve runtime from target config if not explicitly provided
+    if runtime is None:
+        from prism.dagster.targets import load_target, load_user_config
+        target_name = None
+        prism_yaml = project_path / "prism.yaml"
+        if prism_yaml.exists():
+            with open(prism_yaml) as f:
+                prism_data = yaml.safe_load(f) or {}
+            target_name = prism_data.get("target")
+        if not target_name:
+            target_name = load_user_config().get("default_target")
+        if target_name and target_name != "local":
+            target_config = load_target(target_name)
+            if target_config:
+                runtime = target_config.get("container_runtime", "docker")
+        if runtime is None:
+            runtime = "docker"
 
     spec = load_yaml(project_path / "asp.yaml")
     project_name = spec.get("name") or project_path.name
