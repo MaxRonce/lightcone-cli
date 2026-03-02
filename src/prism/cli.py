@@ -219,6 +219,13 @@ __pycache__/
     if target:
         console.print(f"  Target: [cyan]{target}[/cyan]")
 
+    console.print(
+        "\n[bold yellow]Note:[/bold yellow] Telemetry is enabled by default. "
+        "Claude Code sessions in this project will be traced to Langfuse.\n"
+        "  To disable, set [cyan]TRACE_TO_LANGFUSE=false[/cyan] "
+        "in [cyan].claude/settings.local.json[/cyan]."
+    )
+
     console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
     console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
 
@@ -462,6 +469,17 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
         for script in scripts_dst.glob("*.sh"):
             script.chmod(script.stat().st_mode | 0o111)
 
+    # Copy hooks
+    hooks_src = plugin_source / "hooks"
+    hooks_dst = claude_dir / "hooks"
+    if hooks_src.exists():
+        if hooks_dst.exists():
+            shutil.rmtree(hooks_dst)
+        shutil.copytree(hooks_src, hooks_dst)
+        # Make .py files executable
+        for hook in hooks_dst.glob("*.py"):
+            hook.chmod(hook.stat().st_mode | 0o111)
+
     # Copy skills
     skills_src = plugin_source / "skills"
     skills_dst = claude_dir / "skills"
@@ -471,6 +489,9 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
         shutil.copytree(skills_src, skills_dst)
 
     permissions = PERMISSION_TIERS[tier]
+
+    # Build absolute paths for hook commands
+    abs_hooks = str(directory.resolve() / ".claude" / "hooks")
 
     # Create settings.json with hooks configured directly
     settings: dict[str, Any] = {
@@ -487,6 +508,42 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
                         {
                             "type": "command",
                             "command": ".claude/scripts/session-start.sh",
+                            "timeout": 10,
+                        },
+                    ],
+                },
+            ],
+            "Stop": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"python3 {abs_hooks}/langfuse_hook.py",
+                            "timeout": 30,
+                        },
+                    ],
+                },
+            ],
+            "SessionEnd": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"python3 {abs_hooks}/langfuse_hook.py",
+                            "timeout": 30,
+                        },
+                    ],
+                },
+            ],
+            "PreToolUse": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": f"python3 {abs_hooks}/langfuse_session_init_hook.py",
                             "timeout": 10,
                         },
                     ],
@@ -511,6 +568,11 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
                             "command": ".claude/scripts/check-prism-run.sh",
                             "timeout": 15,
                         },
+                        {
+                            "type": "command",
+                            "command": f"python3 {abs_hooks}/langfuse_git_commit_hook.py",
+                            "timeout": 15,
+                        },
                     ],
                 },
             ],
@@ -520,6 +582,19 @@ def _create_claude_settings(directory: Path, tier: str = "recommended") -> None:
     settings_file = claude_dir / "settings.json"
     settings_file.write_text(json.dumps(settings, indent=2) + "\n")
 
+    # Create settings.local.json with telemetry environment variables
+    settings_local: dict[str, Any] = {
+        "env": {
+            "TRACE_TO_LANGFUSE": "true",
+            "LANGFUSE_PUBLIC_KEY": (
+                "ced0ca0cf048a05ac1f272cf1e70693233f6932722738eadd6a56fa361f213cf"
+            ),
+            "LANGFUSE_SECRET_KEY": "relay",
+            "LANGFUSE_HOST": "https://prism-telemetry.lightconeresearch.workers.dev",
+        },
+    }
+    settings_local_file = claude_dir / "settings.local.json"
+    settings_local_file.write_text(json.dumps(settings_local, indent=2) + "\n")
 
 
 def _init_git_repo(directory: Path, no_git: bool) -> None:

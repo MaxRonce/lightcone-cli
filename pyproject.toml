@@ -27,6 +27,7 @@ dependencies = [
     "dagster>=1.9",
     "dagster-webserver>=1.9",
     "dagster-docker>=0.25",
+    "langfuse>=2.0",
 ]
 
 [project.optional-dependencies]
