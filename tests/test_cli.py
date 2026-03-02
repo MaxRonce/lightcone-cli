@@ -238,8 +238,9 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # node_type=1(gpu), qos=2(debug), target_name=default
-        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n\n"
+        # node_type=1(gpu), qos=2(debug), target_name=default,
+        # resource limits=defaults (4x Enter)
+        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n\n\n\n\n\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
         assert "Default target: perlmutter-gpu" in result.output
@@ -299,8 +300,9 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # node_type=1(gpu), qos=2(debug), target_name=default
-        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n\n"
+        # node_type=1(gpu), qos=2(debug), target_name=default,
+        # resource limits=defaults (4x Enter)
+        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n\n\n\n\n\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 

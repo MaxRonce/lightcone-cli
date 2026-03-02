@@ -1208,11 +1208,31 @@ def target_add(name: str | None) -> None:
             "constraint": constraint,
             "qos": qos,
         }
-        # Stamp resource limits
-        for key in ("max_nodes", "max_walltime_minutes",
-                     "max_concurrent_jobs", "max_node_hours_per_session"):
-            if key in resource_limits:
-                config[key] = resource_limits[key]
+
+        # --- Resource limits ---
+        console.print("\n  [bold]Resource limits[/bold]")
+        console.print("  (these cap what Claude can request per job)\n")
+
+        config["max_nodes"] = click.prompt(
+            "  Max nodes per job",
+            type=int,
+            default=resource_limits.get("max_nodes", 4),
+        )
+        config["max_walltime_minutes"] = click.prompt(
+            "  Max walltime (minutes)",
+            type=int,
+            default=resource_limits.get("max_walltime_minutes", 360),
+        )
+        config["max_concurrent_jobs"] = click.prompt(
+            "  Max concurrent jobs",
+            type=int,
+            default=resource_limits.get("max_concurrent_jobs", 8),
+        )
+        config["max_node_hours_per_session"] = click.prompt(
+            "  Max node-hours per session",
+            type=int,
+            default=resource_limits.get("max_node_hours_per_session", 64),
+        )
 
     path = save_target(target_name, config)
     console.print(f"\n  [green]✓[/green] Created target '{target_name}' at {path}")
@@ -1262,6 +1282,29 @@ def target_edit(name: str) -> None:
         qos = click.prompt("  QOS", default=config.get("qos", ""))
         if qos:
             config["qos"] = qos
+
+        # --- Resource limits ---
+        console.print("\n  [bold]Resource limits:[/bold]")
+        config["max_nodes"] = click.prompt(
+            "  Max nodes per job",
+            type=int,
+            default=config.get("max_nodes", 4),
+        )
+        config["max_walltime_minutes"] = click.prompt(
+            "  Max walltime (minutes)",
+            type=int,
+            default=config.get("max_walltime_minutes", 360),
+        )
+        config["max_concurrent_jobs"] = click.prompt(
+            "  Max concurrent jobs",
+            type=int,
+            default=config.get("max_concurrent_jobs", 8),
+        )
+        config["max_node_hours_per_session"] = click.prompt(
+            "  Max node-hours per session",
+            type=int,
+            default=config.get("max_node_hours_per_session", 64),
+        )
 
     path = save_target(name, config)
     console.print(f"\n  [green]✓[/green] Updated target '{name}' at {path}")
@@ -1482,11 +1525,38 @@ def _run_setup_wizard() -> list[Path]:
             "constraint": nt_info.get("constraint", selected_nt),
             "qos": selected_qos,
         }
-        # Stamp resource limits
-        for rk in ("max_nodes", "max_walltime_minutes",
-                    "max_concurrent_jobs", "max_node_hours_per_session"):
-            if rk in resource_limits:
-                target_config[rk] = resource_limits[rk]
+
+        # --- Resource limits ---
+        console.print("\n  [bold]Resource limits[/bold]")
+        console.print("  (these cap what Claude can request per job)\n")
+
+        max_nodes = click.prompt(
+            "  Max nodes per job",
+            type=int,
+            default=resource_limits.get("max_nodes", 4),
+        )
+        target_config["max_nodes"] = max_nodes
+
+        max_walltime = click.prompt(
+            "  Max walltime (minutes)",
+            type=int,
+            default=resource_limits.get("max_walltime_minutes", 360),
+        )
+        target_config["max_walltime_minutes"] = max_walltime
+
+        max_concurrent = click.prompt(
+            "  Max concurrent jobs",
+            type=int,
+            default=resource_limits.get("max_concurrent_jobs", 8),
+        )
+        target_config["max_concurrent_jobs"] = max_concurrent
+
+        max_node_hours = click.prompt(
+            "  Max node-hours per session",
+            type=int,
+            default=resource_limits.get("max_node_hours_per_session", 64),
+        )
+        target_config["max_node_hours_per_session"] = max_node_hours
 
         path = save_target(target_name, target_config)
         saved_paths.append(path)
