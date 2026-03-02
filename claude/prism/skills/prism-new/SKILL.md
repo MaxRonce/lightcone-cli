@@ -11,7 +11,7 @@ Create a new ASP analysis project through conversation. Build the spec iterative
 ## References
 
 - [Prism Reference](./../prism/SKILL.md) -- core concepts, CLI, validation
-- [Decision Guide](./decision-guide.md) -- decision identification, E/N/U classification, blind-spot checklist
+- [Decision Guide](./decision-guide.md) -- decision identification, prioritization, blind-spot checklist
 - [Literature Extraction](./literature-extraction.md) -- subagent prompt template for paper processing
 - [UI Brand](./../ui-brand.md) -- visual formatting patterns
 - [CLAUDE.md Template](./../../templates/CLAUDE.md) -- asp.yaml structure, insights format, CLI
@@ -78,13 +78,13 @@ Use the conversation and literature to identify decisions. Apply [decision-guide
 - Where did papers disagree or compare alternatives?
 - Where did the user express uncertainty?
 
-Present candidate decisions as a batch for the user to review. Classify each as Type E, N, or U. Write confirmed decisions to asp.yaml with options, rationale, and insight references.
+Write candidate decisions to asp.yaml as a batch for user review in Canvas. Keep chat output concise (summary + decision IDs), and avoid dumping full decision details in chat.
 
 **Probe for blind spots** -- analysts over-focus on methods and neglect data handling. Probe 1-3 areas: data exclusion, variable operationalization, inference criteria.
 
 ### Decision Review
 
-Every decision is **Confirmed** (user weighed in) or **Inferred** (marked `[UNCONFIRMED]`). Track both in the Key Decisions section of `CLAUDE.md`.
+During review, confirm or set each decision's `default`, keep option structure and evidence links, and remove any decisions the user rejects.
 
 ---
 
@@ -117,7 +117,7 @@ Read the existing `CLAUDE.md` (created by `prism init`). Replace the `## Analysi
 
 - **Description**: from asp.yaml
 - **Structure**: for each section (top-level and sub-analyses), list decision IDs with labels and output IDs
-- **Key Decisions**: what each controls and its default. Mark agent-inferred decisions with [UNCONFIRMED]
+- **Key Decisions**: what each controls and its default
 - **Literature Support**: N insights from P papers, DOIs, which decisions they inform (or "No literature added during scoping")
 - **Domain Context**: important things the user explained during scoping -- data characteristics, constraints, why certain approaches were preferred. This is context that would be lost after `/clear`.
 - **Implementation Notes**: domain-specific guidance from the conversation (libraries, data formats, gotchas)
@@ -178,4 +178,5 @@ You MUST spawn subagents (via Task) for paper processing. One paper per subagent
 - **Too many papers** -- ~2 papers per topic area, max 10 per section; do not try to be exhaustive
 - **Background interruptions** -- Never spawn search or extraction subagents during conversation. Collect candidates in Mode 1, process them in Mode 2
 - **Reading PDFs in main context** -- Always delegate to subagents; PDFs consume too much context
+- **Chat dump of decisions** -- Do not dump full candidate decision content in chat; write decisions to asp.yaml and use Canvas for detailed review
 - **Skipping verification** -- If quotes were extracted, always run `asp validate --verify-evidence`
