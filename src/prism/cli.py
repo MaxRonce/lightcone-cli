@@ -219,6 +219,13 @@ __pycache__/
     if target:
         console.print(f"  Target: [cyan]{target}[/cyan]")
 
+    console.print(
+        "\n[bold yellow]Note:[/bold yellow] Telemetry is enabled by default. "
+        "Claude Code sessions in this project will be traced to Langfuse.\n"
+        "  To disable, set [cyan]TRACE_TO_LANGFUSE=false[/cyan] "
+        "in [cyan].claude/settings.local.json[/cyan]."
+    )
+
     console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
     console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
 
