@@ -1098,7 +1098,7 @@ def target(
 @click.argument("name", required=False)
 def target_add(name: str | None) -> None:
     """Create a new execution target."""
-    from prism.dagster.sites import get_site_defaults, list_known_sites
+    from prism.dagster.site_registry import get_site_defaults, list_known_sites
     from prism.dagster.targets import save_target
 
     console.print("\n[bold]Create New Target[/bold]\n")
@@ -1279,7 +1279,7 @@ def _run_setup_wizard() -> list[Path]:
     Creates one target per node type for HPC sites, plus a local target.
     Returns the list of paths where target configs were saved.
     """
-    from prism.dagster.sites import get_site_defaults, list_known_sites
+    from prism.dagster.site_registry import get_site_defaults, list_known_sites
     from prism.dagster.targets import load_user_config, save_target, save_user_config
 
     console.print("\n[bold]Prism Setup — Target Configuration[/bold]")

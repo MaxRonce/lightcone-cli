@@ -1,7 +1,7 @@
 """Tests for HPC site defaults."""
 from __future__ import annotations
 
-from prism.dagster.sites import (
+from prism.dagster.site_registry import (
     SITE_DEFAULTS,
     detect_site,
     get_site_defaults,
