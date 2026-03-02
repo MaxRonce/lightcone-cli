@@ -46,7 +46,7 @@ SITE_DEFAULTS: dict[str, dict[str, Any]] = {
             "shared": {"description": "Fractional GPU (1-2 GPUs), max 48h"},
             "preempt": {"description": "0.25x cost, can be preempted after 2h"},
         },
-        "container_runtimes": ["podman-hpc", "shifter"],
+        "container_runtimes": ["podman-hpc"],
         "resource_limits": {
             "max_nodes": 4,
             "max_walltime_minutes": 360,

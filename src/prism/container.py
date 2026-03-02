@@ -195,7 +195,7 @@ class ContainerStatus:
 
 
 # ---------------------------------------------------------------------------
-# HPC container runtimes (podman-hpc, shifter)
+# HPC container runtimes (podman-hpc)
 # ---------------------------------------------------------------------------
 
 
@@ -277,47 +277,6 @@ def image_exists_podman_hpc(tag: str) -> bool:
         return False
 
 
-def pull_shifterimg(image: str) -> None:
-    """Pull an image into Shifter via ``shifterimg pull``.
-
-    This converts the image from a registry into Shifter format. It is a
-    no-op if the image already exists in Shifter's cache (shifterimg handles
-    this internally).
-
-    Raises :class:`ContainerBuildError` on failure.
-    """
-    try:
-        proc = subprocess.run(
-            ["shifterimg", "pull", image],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError:
-        raise ContainerBuildError(
-            "shifterimg is not installed or not on PATH. "
-            "Are you running on a NERSC login node?"
-        )
-    if proc.returncode != 0:
-        raise ContainerBuildError(
-            f"shifterimg pull failed (exit code {proc.returncode}):\n{proc.stderr}"
-        )
-    logger.info("shifterimg pull %s succeeded.", image)
-
-
-def shifterimg_lookup(image: str) -> bool:
-    """Check whether *image* is available in Shifter via ``shifterimg lookup``."""
-    try:
-        result = subprocess.run(
-            ["shifterimg", "lookup", image],
-            capture_output=True,
-            check=False,
-        )
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False
-
-
 def resolve_container_for_slurm(
     spec: str | dict[str, Any] | None,
     project_path: Path,
@@ -328,15 +287,9 @@ def resolve_container_for_slurm(
 ) -> str | None:
     """Resolve a container spec for SLURM execution, building if needed.
 
-    For ``podman-hpc``:
-    - Build specs (dict with ``build`` key) are built with ``podman-hpc build``
-      and migrated automatically.
-    - Pre-built image strings are migrated if not already available.
-
-    For ``shifter``:
-    - Pre-built image strings are pulled via ``shifterimg pull``.
-    - Build specs are NOT supported (Shifter cannot build on the cluster).
-      Raises :class:`ContainerBuildError` in this case.
+    Build specs (dict with ``build`` key) are built with ``podman-hpc build``
+    and migrated automatically.  Pre-built image strings are migrated if not
+    already available.
 
     Returns the image tag string to use, or ``None`` if no container.
     """
@@ -345,18 +298,11 @@ def resolve_container_for_slurm(
 
     if isinstance(spec, str):
         # Pre-built image reference
-        if container_runtime == "podman-hpc":
-            if not force and image_exists_podman_hpc(spec):
-                logger.info("Image %s already available in podman-hpc, skipping migrate.", spec)
-            else:
-                logger.info("Migrating %s for podman-hpc compute nodes...", spec)
-                _podman_hpc_migrate(spec)
-        elif container_runtime == "shifter":
-            if not force and shifterimg_lookup(spec):
-                logger.info("Image %s already available in Shifter.", spec)
-            else:
-                logger.info("Pulling %s into Shifter...", spec)
-                pull_shifterimg(spec)
+        if not force and image_exists_podman_hpc(spec):
+            logger.info("Image %s already available in podman-hpc, skipping migrate.", spec)
+        else:
+            logger.info("Migrating %s for podman-hpc compute nodes...", spec)
+            _podman_hpc_migrate(spec)
         return spec
 
     # Must be a build spec dict.
@@ -364,12 +310,6 @@ def resolve_container_for_slurm(
     if not build_path:
         raise ContainerBuildError(
             "Container build spec must have a 'build' key pointing to a Containerfile."
-        )
-
-    if container_runtime == "shifter":
-        raise ContainerBuildError(
-            "Shifter does not support building images on the cluster. "
-            "Use a pre-built image string, or switch to podman-hpc."
         )
 
     containerfile = project_path / build_path

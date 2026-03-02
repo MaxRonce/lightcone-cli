@@ -24,7 +24,7 @@ def _resolve_container(
 
     When *container_runtime* is set (i.e. we are targeting SLURM), uses
     ``resolve_container_for_slurm`` which handles podman-hpc build/migrate
-    and shifterimg pull automatically.  Otherwise falls back to the
+    and podman-hpc migrate automatically.  Otherwise falls back to the
     default Docker-based ``resolve_container_spec``.
     """
     if container_runtime:
@@ -161,7 +161,7 @@ def build_definitions(
 
     This is the main entry point for the Dagster integration.  When a SLURM
     target is provided, container images are automatically built (podman-hpc)
-    or pulled (shifter) before asset definitions are constructed.
+    or pulled before asset definitions are constructed.
     """
     spec = load_yaml(project_path / "asp.yaml")
     project_name = spec.get("name") or project_path.name
@@ -186,7 +186,7 @@ def build_definitions(
 
     # Resolve analysis-level container spec to a string for the runner.
     # For SLURM targets this triggers podman-hpc build/migrate or
-    # shifterimg pull automatically.
+    # podman-hpc migrate automatically.
     raw_container = spec.get("container")
     if not no_build:
         default_container = _resolve_container(

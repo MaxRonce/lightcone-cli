@@ -76,7 +76,7 @@ class TestGetSiteDefaults:
         site = get_site_defaults("perlmutter")
         assert site is not None
         assert "podman-hpc" in site["container_runtimes"]
-        assert "shifter" in site["container_runtimes"]
+        assert "shifter" not in site["container_runtimes"]
 
     def test_local_site_exists(self):
         defaults = get_site_defaults("local")

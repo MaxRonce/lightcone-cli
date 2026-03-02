@@ -238,16 +238,16 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # runtime=1(podman-hpc)
-        input_lines = "y\n1\ntestuser\nm1234\n1\n"
+        # node_type=1(gpu), qos=2(debug)
+        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
         assert "Default target: perlmutter-gpu" in result.output
 
-        # Should create one target per node type
+        # Should create only the selected node type + local
         assert (targets_dir / "perlmutter-gpu.yaml").exists()
-        assert (targets_dir / "perlmutter-gpu_hbm80.yaml").exists()
-        assert (targets_dir / "perlmutter-cpu.yaml").exists()
+        assert not (targets_dir / "perlmutter-gpu_hbm80.yaml").exists()
+        assert not (targets_dir / "perlmutter-cpu.yaml").exists()
         assert (targets_dir / "local.yaml").exists()
         assert (tmp_path / "config.yaml").exists()
 
@@ -258,6 +258,11 @@ class TestSetupCommand:
         assert target["qos"] == "debug"
         assert target["backend"] == "slurm"
         assert target["max_nodes"] == 4
+
+        # Verify closing message
+        assert "prism target --list" in result.output
+        assert "prism target add" in result.output
+        assert "prism target edit" in result.output
 
     def test_setup_wizard_local(self, runner: CliRunner, tmp_path: Path, monkeypatch):
         """Test the wizard flow choosing local (no HPC)."""
@@ -294,8 +299,8 @@ class TestSetupCommand:
                             lambda: tmp_path / "config.yaml")
 
         # hpc=yes, site=1(perlmutter), username, account,
-        # runtime=1
-        input_lines = "y\n1\ntestuser\nm1234\n1\n"
+        # node_type=1(gpu), qos=2(debug)
+        input_lines = "y\n1\ntestuser\nm1234\n1\n2\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 

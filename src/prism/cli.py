@@ -756,7 +756,7 @@ def run(
 @click.option("--force", is_flag=True, help="Rebuild images even if they already exist")
 @click.option(
     "--runtime", "-r",
-    type=click.Choice(["docker", "podman-hpc", "shifter"]),
+    type=click.Choice(["docker", "podman-hpc"]),
     default="docker",
     help="Container runtime to build with (default: docker)",
 )
@@ -768,9 +768,8 @@ def build(force: bool, runtime: str) -> None:
     Images are content-addressed — rebuilds only happen when the
     Containerfile or dependency files change.
 
-    For NERSC sites, use --runtime to build with podman-hpc (which
-    also migrates images for compute nodes) or pull pre-built images
-    with shifter.
+    For NERSC sites, use --runtime podman-hpc to build and migrate
+    images for compute nodes.
 
     Examples:
         prism build                      # build with docker
@@ -827,7 +826,7 @@ def build(force: bool, runtime: str) -> None:
 
     for label, bspec in build_specs:
         try:
-            if runtime in ("podman-hpc", "shifter"):
+            if runtime == "podman-hpc":
                 tag = resolve_container_for_slurm(
                     bspec, project_path, project_name, runtime, force=force,
                 )
@@ -1350,39 +1349,85 @@ def _run_setup_wizard() -> list[Path]:
                 "scheduler", {},
             ).get("container_runtime", "docker")
 
-        # --- Create one target per node type ---
+        # --- Node type selection ---
         node_types = site.get("node_types", {})
         resource_limits = site.get("resource_limits", {})
-        first_target = None
+        nt_keys = list(node_types.keys())
 
-        for nt_key, nt_info in node_types.items():
-            target_name = f"{site_key}-{nt_key}"
-            if first_target is None:
-                first_target = target_name
+        if len(nt_keys) > 1:
+            console.print("\n  [bold]Node types:[/bold]")
+            for i, nt_key in enumerate(nt_keys, 1):
+                desc = node_types[nt_key].get("description", nt_key)
+                console.print(f"    {i}. {nt_key} — {desc}")
 
-            target_config: dict[str, Any] = {
-                "site": site_key,
-                "backend": site.get("backend", "slurm"),
-                "connection": {
-                    "hostname": hostname,
-                    "username": username,
-                },
-                "account": account,
-                "container_runtime": container_runtime,
-                "constraint": nt_info.get("constraint", nt_key),
-                "qos": site.get("safe_defaults", {}).get("qos", "regular"),
-            }
-            # Stamp resource limits
-            for rk in ("max_nodes", "max_walltime_minutes",
-                        "max_concurrent_jobs", "max_node_hours_per_session"):
-                if rk in resource_limits:
-                    target_config[rk] = resource_limits[rk]
+            nt_choices = [str(i) for i in range(1, len(nt_keys) + 1)]
+            nt_idx = click.prompt(
+                "  Select node type",
+                type=click.Choice(nt_choices),
+                default="1",
+            )
+            selected_nt = nt_keys[int(nt_idx) - 1]
+        elif nt_keys:
+            selected_nt = nt_keys[0]
+        else:
+            selected_nt = "default"
 
-            path = save_target(target_name, target_config)
-            saved_paths.append(path)
-            console.print(f"  [green]✓[/green] Created target: {target_name}")
+        # --- QOS selection ---
+        qos_options = site.get("qos_options", {})
+        qos_keys = list(qos_options.keys())
 
-        default_target = first_target or "local"
+        if len(qos_keys) > 1:
+            # Find default QOS
+            qos_default_idx = "1"
+            for i, qk in enumerate(qos_keys, 1):
+                if qos_options[qk].get("default"):
+                    qos_default_idx = str(i)
+                    break
+
+            console.print("\n  [bold]QOS:[/bold]")
+            for i, qk in enumerate(qos_keys, 1):
+                desc = qos_options[qk].get("description", qk)
+                console.print(f"    {i}. {qk} — {desc}")
+
+            qos_choices = [str(i) for i in range(1, len(qos_keys) + 1)]
+            qos_idx = click.prompt(
+                "  Select QOS",
+                type=click.Choice(qos_choices),
+                default=qos_default_idx,
+            )
+            selected_qos = qos_keys[int(qos_idx) - 1]
+        elif qos_keys:
+            selected_qos = qos_keys[0]
+        else:
+            selected_qos = site.get("safe_defaults", {}).get("qos", "regular")
+
+        # --- Create only the selected target ---
+        nt_info = node_types.get(selected_nt, {})
+        target_name = f"{site_key}-{selected_nt}"
+
+        target_config: dict[str, Any] = {
+            "site": site_key,
+            "backend": site.get("backend", "slurm"),
+            "connection": {
+                "hostname": hostname,
+                "username": username,
+            },
+            "account": account,
+            "container_runtime": container_runtime,
+            "constraint": nt_info.get("constraint", selected_nt),
+            "qos": selected_qos,
+        }
+        # Stamp resource limits
+        for rk in ("max_nodes", "max_walltime_minutes",
+                    "max_concurrent_jobs", "max_node_hours_per_session"):
+            if rk in resource_limits:
+                target_config[rk] = resource_limits[rk]
+
+        path = save_target(target_name, target_config)
+        saved_paths.append(path)
+        console.print(f"  [green]✓[/green] Created target: {target_name}")
+
+        default_target = target_name
 
     # --- Always create local target ---
     local_config: dict[str, Any] = {
@@ -1399,6 +1444,12 @@ def _run_setup_wizard() -> list[Path]:
     user_config["default_target"] = default_target
     save_user_config(user_config)
     console.print(f"\n  [green]✓[/green] Default target: {default_target}")
+
+    console.print(
+        "\n  To list configured targets:  [cyan]prism target --list[/cyan]"
+        "\n  To add more targets:         [cyan]prism target add[/cyan]"
+        "\n  To edit a target:            [cyan]prism target edit <name>[/cyan]"
+    )
 
     return saved_paths
 
