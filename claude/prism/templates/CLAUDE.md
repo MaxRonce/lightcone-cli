@@ -186,12 +186,10 @@ asp viz                                     # Visualize decision space
 asp schema show analysis                    # Show JSON schema
 
 # prism -- execution operations
-prism build [--force]                       # Build container images
 prism run [OUTPUT] [--universe NAME]        # Execute recipes via Dagster (auto-builds)
-prism run --no-build                        # Execute without building containers
 prism status [--universe NAME]              # Materialization + container status
 prism dev                                   # Dagster webserver UI
-prism remote setup NAME                     # Configure HPC execution target
+prism target --help                         # Configure HPC execution target
 ```
 
 ### Universe Management
@@ -256,9 +254,7 @@ evidence:
 ### Failure Diagnosis
 
 - **Script arg not recognized** -- Use underscores in argparse to match decision IDs
-- **Container not built** -- `prism build` or remove `--no-build`
 - **Recipe input not found** -- Materialize upstream outputs first
-- **Dagster not installed** -- `pip install prism[dagster]`
 
 After failure: fix, then `prism run <output_id> --universe <name>`.
 
