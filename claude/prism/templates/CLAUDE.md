@@ -54,6 +54,21 @@ Three overlapping phases:
 
 The spec is **self-similar** -- every level (top or sub-analysis) has the same fields: `name`, `description`, `version`, `authors`, `tags`, `inputs`, `outputs`, `decisions`, `insights`, `analyses`, `container`, `success_criteria`.
 
+#### When to Create Sub-Analyses
+
+Default to a **single analysis**. Split into sub-analyses only when a stage is a true standalone unit with:
+
+1. its own objective (can be evaluated on its own),
+2. its own output artifact (a meaningful data product, not just an internal intermediate),
+3. decisions that are meaningfully scoped to that stage and can vary independently.
+
+Do **not** split just because the workflow has multiple implementation steps. If all steps jointly serve one objective and one end product, keep it as one analysis.
+
+If boundaries are unclear, start single-analysis and split later only when boundaries become explicit in `asp.yaml`:
+- separate stage outputs,
+- explicit `from` links between stages,
+- clear decision ownership (shared at top-level vs stage-specific under each sub-analysis).
+
 ```yaml
 # Simple analysis -- everything at top level
 version: "1.0"
