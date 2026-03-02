@@ -178,7 +178,8 @@ def build_definitions(
         runner_config = {"connection": target_config.get("connection", {})}
         scheduler = {}
         for key in ("account", "qos", "constraint", "node_type",
-                     "container_runtime", "nodes", "time_limit"):
+                     "container_runtime", "container_flags",
+                     "nodes", "time_limit"):
             if target_config.get(key) is not None:
                 scheduler[key] = target_config[key]
         if scheduler:

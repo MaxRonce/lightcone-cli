@@ -79,6 +79,24 @@ class TestBuildAssetDefinitions:
         defs = build_definitions(sample_asp_yaml)
         assert isinstance(defs, dg.Definitions)
 
+    def test_container_flags_forwarded_to_runner(self, sample_asp_yaml):
+        """container_flags from target config should reach the runner's scheduler config."""
+        target_config = {
+            "backend": "slurm",
+            "account": "m1234",
+            "container_runtime": "podman-hpc",
+            "container_flags": ["--scratch", "--cfs"],
+        }
+        with unittest.mock.patch(
+            "prism.dagster.assets.ASPContainerRunner",
+        ) as MockRunner:
+            build_definitions(
+                sample_asp_yaml, target_config=target_config, no_build=True,
+            )
+            call_kwargs = MockRunner.call_args[1]
+            scheduler = call_kwargs["target_config"]["scheduler"]
+            assert scheduler["container_flags"] == ["--scratch", "--cfs"]
+
     def test_build_spec_resolved_to_string(self, tmp_path, mock_runner):
         """Container build specs should be resolved to tag strings."""
         containerfile = tmp_path / "Containerfile"

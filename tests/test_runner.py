@@ -247,6 +247,24 @@ class TestGenerateSbatchScript:
         assert "--mpi" in script
         assert "--nccl" in script
 
+    def test_podman_hpc_with_custom_flags(self, tmp_path):
+        """Custom container_flags like --scratch pass through to podman-hpc."""
+        script = generate_sbatch_script(
+            command="python scripts/train.py",
+            container="ghcr.io/proj/ml:latest",
+            container_runtime="podman-hpc",
+            project_root=tmp_path,
+            output_id="train",
+            universe_id="baseline",
+            resources={},
+            scheduler_config={
+                "account": "m1234",
+                "container_flags": ["--scratch", "--cfs"],
+            },
+        )
+        assert "--scratch" in script
+        assert "--cfs" in script
+
     def test_no_container(self, tmp_path):
         script = generate_sbatch_script(
             command="python scripts/train.py",
