@@ -14,7 +14,7 @@ Prism is the agentic layer for ASTRA (Agentic Schema for Transparent Research An
 - **Project scaffolding** with Claude Code integration (`prism init`)
 - **Claude Code skills** for analysis creation, insight extraction, and verification
 - **HPC/remote target management** for running on compute clusters
-- **Visual editors** (Canvas, Navigator)
+- **Visual editors** (Prism-UI, Navigator)
 
 ## Quick Start
 
@@ -44,7 +44,7 @@ prism remote setup --list
 prism remote show perlmutter
 
 # Visual editors
-prism canvas
+prism prism-ui
 prism navigator
 
 # Spec operations (via ASTRA CLI):

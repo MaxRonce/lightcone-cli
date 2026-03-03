@@ -16,7 +16,7 @@ Prism/
 ├── extern/ASTRA            # Symlink to ASTRA repo
 ├── src/prism/
 │   ├── __init__.py
-│   ├── cli.py              # Prism CLI (init, remote, canvas, navigator)
+│   ├── cli.py              # Prism CLI (init, remote, prism-ui, navigator)
 │   └── remote.py           # HPC/remote target config
 ├── claude/prism/            # Claude Code plugin
 │   ├── skills/             # Skills for Claude Code
@@ -47,7 +47,7 @@ mypy src/
 ## Key Conventions
 
 - Prism depends on ASTRA for all spec operations (validation, schemas, helpers)
-- The `prism` CLI handles agent/execution operations (init with scaffolding, remote, canvas)
+- The `prism` CLI handles agent/execution operations (init with scaffolding, remote, prism-ui)
 - The `astra` CLI handles spec operations (validate, info, universe, viz, schema, paper)
 - Skills are branded as `/prism-new`, `/prism-build`, `/prism-verify`
 - Target configs are stored in `~/.prism/targets/`
