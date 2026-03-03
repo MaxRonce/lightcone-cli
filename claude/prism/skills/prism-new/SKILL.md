@@ -79,7 +79,7 @@ Use the conversation and literature to identify decisions. Apply [decision-guide
 - Where did papers disagree or compare alternatives?
 - Where did the user express uncertainty?
 
-Write candidate decisions to astra.yaml as a batch for user review in Canvas. Keep chat output concise (summary + decision IDs), and avoid dumping full decision details in chat.
+Write candidate decisions to astra.yaml as a batch for user review in Prism-UI. Keep chat output concise (summary + decision IDs), and avoid dumping full decision details in chat.
 
 **Probe for blind spots** -- analysts over-focus on methods and neglect data handling. Probe 1-3 areas: data exclusion, variable operationalization, inference criteria.
 
@@ -175,5 +175,5 @@ You MUST spawn subagents (via Task) for paper processing. One paper per subagent
 - **Too many papers** -- ~2 papers per topic area, max 10 per section; do not try to be exhaustive
 - **Background interruptions** -- Never spawn search or extraction subagents during conversation. Collect candidates in Mode 1, process them in Mode 2
 - **Reading PDFs in main context** -- Always delegate to subagents; PDFs consume too much context
-- **Chat dump of decisions** -- Do not dump full candidate decision content in chat; write decisions to astra.yaml and use Canvas for detailed review
+- **Chat dump of decisions** -- Do not dump full candidate decision content in chat; write decisions to astra.yaml and use Prism-UI for detailed review
 - **Skipping verification** -- If quotes were extracted, always run `astra validate --verify-evidence`
