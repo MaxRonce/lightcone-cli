@@ -61,10 +61,18 @@ jobs:
               .sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at));
             const latestApproval = approvals.at(-1);
 
-            // TODO: restore approval requirement after testing
-            const approvalTime = latestApproval
-              ? new Date(latestApproval.submitted_at)
-              : new Date(0);
+            if (!latestApproval) {
+              await setStatus('pending', 'Awaiting PR approval before DCO sign-off');
+              return;
+            }
+
+            // --- Check for new commits since approval ---
+            if (headSha !== latestApproval.commit_id) {
+              await setStatus('pending', 'New commits since approval — awaiting re-approval');
+              return;
+            }
+
+            const approvalTime = new Date(latestApproval.submitted_at);
 
             // --- Get all commit authors ---
             const commits = await github.paginate(github.rest.pulls.listCommits, {
@@ -95,11 +103,52 @@ jobs:
             const signed = authors.filter(a => signedAuthors.has(a));
             const unsigned = authors.filter(a => !signedAuthors.has(a));
 
+            // --- Build the DCO status comment body ---
+            const allSigned = unsigned.length === 0;
+            const signedList = signed.map(a => `- :white_check_mark: @${a}`).join('\n') || '_none yet_';
+            const unsignedList = unsigned.map(a => `- :x: @${a}`).join('\n');
+
+            const commentBody = [
+              MARKER,
+              '## Developer Certificate of Origin',
+              '',
+              allSigned
+                ? ':white_check_mark: **All contributors have signed the DCO. This PR is ready to merge.**'
+                : 'This PR has been approved. Before it can be merged, all contributors must sign the [Developer Certificate of Origin](https://developercertificate.org/).',
+              '',
+              '### Status',
+              signedList,
+              ...(unsignedList ? [unsignedList] : []),
+              '',
+              ...(!allSigned ? [
+                '### How to sign',
+                'Post the following comment **exactly as written**:',
+                '',
+                `> ${SIGN_OFF_TEXT}`,
+              ] : []),
+            ].join('\n');
+
+            // --- Find existing bot comment or create new one ---
+            const existingComment = comments.find(c =>
+              c.body.includes(MARKER) && new Date(c.created_at) > approvalTime
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existingComment.id,
+                body: commentBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: prNumber,
+                body: commentBody,
+              });
+            }
+
             // --- All signed: append Signed-off-by trailers to PR body ---
-            if (unsigned.length === 0) {
+            if (allSigned) {
               const TRAILER_MARKER = '<!-- dco-signed-off-by -->';
 
-              // Build Signed-off-by lines from commit author info
               const trailerLines = [];
               for (const author of signed) {
                 const commit = commits.find(c => c.author?.login === author);
@@ -109,7 +158,6 @@ jobs:
               }
               const trailerBlock = `${TRAILER_MARKER}\n${trailerLines.join('\n')}`;
 
-              // Update PR body: replace existing trailer block or append
               const currentBody = pr.body || '';
               let newBody;
               if (currentBody.includes(TRAILER_MARKER)) {
@@ -128,36 +176,6 @@ jobs:
 
               await setStatus('success', 'All contributors have signed the DCO');
               return;
-            }
-
-            // --- Post DCO request comment (once per approval cycle) ---
-            const alreadyRequested = comments.some(c =>
-              c.body.includes(MARKER) && new Date(c.created_at) > approvalTime
-            );
-
-            if (!alreadyRequested) {
-              const authorList = authors.map(a => `- @${a}`).join('\n');
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: prNumber,
-                body: [
-                  MARKER,
-                  '## Developer Certificate of Origin',
-                  '',
-                  'This PR has been approved. Before it can be merged, all contributors must sign the [Developer Certificate of Origin](https://developercertificate.org/).',
-                  '',
-                  '### Contributors',
-                  authorList,
-                  '',
-                  '### How to sign',
-                  'Post the following comment **exactly as written**:',
-                  '',
-                  `> ${SIGN_OFF_TEXT}`,
-                  '',
-                  '---',
-                  `**Signed:** ${signed.map(a => `@${a}`).join(', ') || 'none yet'}`,
-                  `**Awaiting:** ${unsigned.map(a => `@${a}`).join(', ')}`,
-                ].join('\n'),
-              });
             }
 
             await setStatus('pending', `Awaiting DCO sign-off from: ${unsigned.join(', ')}`);
