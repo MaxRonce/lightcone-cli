@@ -10,7 +10,7 @@ ASTRA (Agentic Schema for Transparent Research Analysis) analysis project, built
 |---------|---------|
 | `/prism-new` | Scope question, structure decisions, integrate literature |
 | `/prism-migrate` | Migrate an existing project into ASTRA/Prism framework |
-| `/prism-build` | Build loop -- spec to materialized results |
+| `/prism-build [description]` | Build loop -- spec to materialized results. Optional description guides plan priorities |
 | `/prism-verify` | Verify results, decision-code alignment, success criteria |
 | `/prism-feedback` | File a bug report from the current session |
 

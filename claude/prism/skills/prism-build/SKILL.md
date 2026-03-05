@@ -3,13 +3,15 @@ name: prism-build
 description: >
   Build an ASTRA analysis from spec to materialized results. Plans interactively,
   then loops autonomously via ralph-wiggum until all outputs are verified.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(astra:*), Bash(prism:*), Bash(python:*), Bash(git:*), Bash(pip:*), Bash(mkdir:*), Bash(rm:*), Bash(setup-prism-build:*), Agent, AskUserQuestion
-argument-hint: "[--universe NAME] [--max-iterations N]"
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(astra:*), Bash(prism:*), Bash(python:*), Bash(git:*), Bash(pip:*), Bash(mkdir:*), Bash(setup-prism-build:*), Agent, AskUserQuestion
+argument-hint: "[DESCRIPTION] [--universe NAME] [--max-iterations N]"
 ---
 
 # /prism-build
 
 Two-phase build: plan interactively with the user, then loop autonomously until done.
+
+**Do NOT write or modify any code (scripts, astra.yaml, etc.) until the user approves the plan in Phase 1.** Phase 1 is read-only exploration and planning. Code changes only happen in Phase 2 (the loop).
 
 ## Phase 0: Check for Interrupted Loop
 
@@ -25,9 +27,9 @@ If it exists, ask the user via `AskUserQuestion`:
 
 **If resume:** Run the setup script in resume mode to claim the loop for this session:
 ```
-bash <skill-scripts>/setup-prism-build.sh --resume
+bash .claude/skills/prism-build/scripts/setup-prism-build.sh --resume
 ```
-Then jump straight to Phase 2's iteration step — read `.claude/ralph-loop.local.md` and follow the loop prompt.
+Then jump straight to reading `.claude/ralph-loop.local.md` and following the loop prompt.
 
 **If start fresh:** Delete the old state file (`rm .claude/ralph-loop.local.md`) and continue to Phase 1.
 
@@ -38,7 +40,7 @@ Then jump straight to Phase 2's iteration step — read `.claude/ralph-loop.loca
 Run the setup script in validate mode:
 
 ```
-bash <skill-scripts>/setup-prism-build.sh --validate --universe <UNIVERSE> --max-iterations <N>
+bash .claude/skills/prism-build/scripts/setup-prism-build.sh --validate --universe <UNIVERSE> --max-iterations <N>
 ```
 
 Default universe is `baseline`, default max-iterations is `25`. Parse these from the user's arguments.
@@ -47,29 +49,31 @@ If validation fails, fix issues before proceeding (create `astra.yaml` via `/pri
 
 ### 2. Create implementation plan
 
-Spawn a general-purpose sub-agent to produce an ordered implementation plan:
+Read `astra.yaml`, `CLAUDE.md`, `universes/<UNIVERSE>.yaml`, and any existing `scripts/` directory. If the user provided a description (e.g. `/prism-build focus on the fitting script first`), use it to guide the plan's priorities and ordering. Produce an ordered implementation plan and write it to `plans/build-plan-<UNIVERSE>.md`.
 
-```
-Agent tool, subagent_type: general-purpose
-Prompt: "Read astra.yaml, CLAUDE.md, and any existing scripts/ directory. Produce an ordered implementation plan for building this analysis in universe <UNIVERSE>. For each output in astra.yaml, determine: what script needs to be written, what decisions it must parameterize, what its dependencies are, and what order to build them in. Include a rough estimate of computational costs (e.g. node-hours, GPU-hours, expected walltime) based on the recipes, resource requests, and data sizes where possible — caveat these estimates clearly as they may be unreliable. Write the plan to plans/build-plan-<UNIVERSE>.md as a markdown checklist."
-```
+The plan must include:
+
+1. **Analysis overview** — project name, universe, input data, container, execution target
+2. **Dependency graph** — which outputs depend on which
+3. **Decision selections** — table of decisions and their selected values for this universe
+4. **Ordered build checklist** — for each output: script, decisions, dependencies, estimated cost
+5. **Verification checklist** — success criteria checks, spec validation, decision-code alignment
 
 ### 3. Present plan for approval
 
-Read `plans/build-plan-<UNIVERSE>.md` and present it to the user via `AskUserQuestion`:
+Print the plan contents and ask the user via `AskUserQuestion`:
 
-- Show the plan contents
-- Ask: "Does this build plan look good? You can approve it, request changes, or edit `plans/build-plan-<UNIVERSE>.md` directly."
+- "Does this build plan look good?"
 - Options: "Approve and start building", "Let me edit the plan first"
 
-If the user wants changes, iterate until they approve.
+If the user wants changes, wait for them to edit `plans/build-plan-<UNIVERSE>.md` and re-present.
 
 ## Phase 2: Activate Loop
 
 Once the user approves the plan, activate the autonomous loop:
 
 ```
-bash <skill-scripts>/setup-prism-build.sh --activate --universe <UNIVERSE> --max-iterations <N>
+bash .claude/skills/prism-build/scripts/setup-prism-build.sh --activate --universe <UNIVERSE> --max-iterations <N>
 ```
 
 This creates `.claude/ralph-loop.local.md` — the ralph-wiggum state file. The stop hook will now intercept exits and re-inject the build prompt.
