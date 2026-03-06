@@ -274,7 +274,7 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: tmp_path / "config.yaml")
 
-        # hpc=no — defaults to local, no further prompts
+        # hpc=no
         input_lines = "n\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
@@ -361,8 +361,8 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
 
-        # action 5 (re-run wizard), then wizard: no HPC
-        input_lines = "5\nn\n"
+        # action 6 (re-run wizard), then wizard: no HPC
+        input_lines = "6\nn\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
         assert "Change permission level" in result.output
@@ -393,7 +393,7 @@ class TestSetupCommand:
     def test_setup_menu_change_default(
         self, runner: CliRunner, tmp_path: Path, monkeypatch,
     ):
-        """Menu action 4 changes the default target."""
+        """Menu action 5 changes the default target."""
         targets_dir = tmp_path / "targets"
         targets_dir.mkdir(parents=True)
         (targets_dir / "perlmutter-gpu.yaml").write_text("site: perlmutter\n")
@@ -404,8 +404,8 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
 
-        # action 4, pick target 2 (perlmutter-gpu — local is 1)
-        input_lines = "4\n2\n"
+        # action 5, pick target 2 (perlmutter-gpu — local is 1)
+        input_lines = "5\n2\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
 
@@ -416,7 +416,7 @@ class TestSetupCommand:
     def test_setup_menu_exit(
         self, runner: CliRunner, tmp_path: Path, monkeypatch,
     ):
-        """Menu action 6 (exit) returns immediately. Also the default."""
+        """Menu action 7 (exit) returns immediately. Also the default."""
         targets_dir = tmp_path / "targets"
         targets_dir.mkdir(parents=True)
         monkeypatch.setattr("prism.dagster.targets.get_targets_dir",
@@ -426,7 +426,7 @@ class TestSetupCommand:
         monkeypatch.setattr("prism.dagster.targets.get_config_path",
                             lambda: config_path)
 
-        # Just press Enter — default is 6 (exit)
+        # Just press Enter — default is 7 (exit)
         input_lines = "\n"
         result = runner.invoke(main, ["setup"], input=input_lines)
         assert result.exit_code == 0
