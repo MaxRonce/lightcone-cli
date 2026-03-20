@@ -1,7 +1,8 @@
-"""ASTRA Container Runner — executes recipes in Docker, locally, or via SLURM."""
+"""ASTRA Container Runner — executes recipes in Docker/Podman, locally, or via SLURM."""
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -12,6 +13,13 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _substitute_python(command: str, python_path: str) -> str:
+    """Replace a leading ``python `` with a specific interpreter path."""
+    if command.startswith("python "):
+        return python_path + command[len("python"):]
+    return command
 
 
 @dataclass
@@ -56,11 +64,14 @@ class ASTRAContainerRunner:
         backend: str = "docker",
         default_container: str | None = None,
         target_config: dict[str, Any] | None = None,
+        container_runtime: str | None = None,
     ):
         self.project_root = Path(project_root)
         self.backend = backend
         self.default_container = default_container
         self.target_config = target_config or {}
+        self.container_runtime = container_runtime
+        self._venv_deps_checked = False
 
     def execute(
         self,
@@ -97,25 +108,50 @@ class ASTRAContainerRunner:
                 external_inputs=external_inputs,
             )
 
-        # Docker backend — try Docker first, fall back to local
+        if self.backend == "venv":
+            return self._run_venv(full_command, output_id, universe_id)
+
+        # Container backend — try container runtime, fall back to venv or local.
+        # Note: the explicit "local" backend (set via target config) skips dep
+        # installation and runs in the current Python env.  The implicit fallback
+        # here goes to _run_venv (with dep installation) when .venv is present,
+        # and only falls back to _run_local when .venv is absent.
         effective_container = container or self.default_container
         if effective_container:
-            result = self._run_docker(
+            result = self._run_container(
                 command=full_command,
                 container=effective_container,
                 universe_id=universe_id,
                 resources=resources or {},
+                runtime=self.container_runtime or "docker",
             )
             if result.exit_code == 0:
                 return result
-            # Docker failed — fall back
+            # Container failed — fall back to venv (or local if venv is absent)
             logger.warning(
-                "Docker execution failed for '%s' (exit code %d). "
-                "Falling back to local execution.\n  stderr: %s",
-                output_id, result.exit_code,
+                "%s execution failed for '%s' (exit code %d). "
+                "Falling back to venv execution.\n  stderr: %s",
+                self.container_runtime or "docker", output_id, result.exit_code,
                 result.metadata.get("stderr", "")[:200],
             )
 
+        venv_python = self.project_root / ".venv" / "bin" / "python"
+        if venv_python.exists():
+            return self._run_venv(
+                command=full_command,
+                output_id=output_id,
+                universe_id=universe_id,
+                warn=effective_container is not None,
+            )
+
+        # No .venv available — fall back to the current Python environment so
+        # that projects without a venv (e.g. pre-existing installs that predate
+        # prism init) continue to work rather than surfacing a confusing error.
+        logger.warning(
+            "No .venv found for '%s'; executing locally without dep isolation. "
+            "Run 'prism init' to create a project venv with dependencies installed.",
+            output_id,
+        )
         return self._run_local(
             command=full_command,
             output_id=output_id,
@@ -123,19 +159,20 @@ class ASTRAContainerRunner:
             warn=effective_container is not None,
         )
 
-    def _run_docker(
+    def _run_container(
         self,
         command: str,
         container: str,
         universe_id: str,
         resources: dict[str, Any],
+        runtime: str = "docker",
     ) -> ExecutionResult:
-        """Execute a recipe in a Docker container.
+        """Execute a recipe in a container (Docker or Podman).
 
         Mounts the project root at /workspace so scripts can read data and
         write results using their normal relative paths.
         """
-        cmd = ["docker", "run", "--rm"]
+        cmd = [runtime, "run", "--rm"]
         cmd.extend(translate_resources_to_docker_flags(resources))
         cmd.extend([
             "-v", f"{self.project_root}:/workspace",
@@ -147,11 +184,10 @@ class ASTRAContainerRunner:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
         except FileNotFoundError:
-            # Docker binary not found
             return ExecutionResult(
                 exit_code=127,
                 output_path=self.project_root / "results" / universe_id,
-                metadata={"stderr": "docker: command not found"},
+                metadata={"stderr": f"{runtime}: command not found"},
             )
 
         return ExecutionResult(
@@ -160,8 +196,8 @@ class ASTRAContainerRunner:
             metadata={
                 "stdout": result.stdout[-2000:] if result.stdout else "",
                 "stderr": result.stderr[-2000:] if result.stderr else "",
-                "backend": "docker",
-                "docker_command": " ".join(cmd),
+                "backend": runtime,
+                "container_command": " ".join(cmd),
             },
         )
 
@@ -184,12 +220,7 @@ class ASTRAContainerRunner:
                 output_id,
             )
 
-        # Use the same Python that is running prism, unless the command
-        # explicitly names an interpreter.
-        full_command = command
-        env_python = sys.executable
-        if full_command.startswith("python "):
-            full_command = env_python + full_command[len("python"):]
+        full_command = _substitute_python(command, sys.executable)
 
         result = subprocess.run(
             full_command,
@@ -209,6 +240,121 @@ class ASTRAContainerRunner:
                 "backend": "local",
             },
         )
+
+    def _run_venv(
+        self,
+        command: str,
+        output_id: str,
+        universe_id: str,
+        warn: bool = False,
+    ) -> ExecutionResult:
+        """Execute a recipe in the project's virtual environment.
+
+        Uses the ``.venv/`` created by ``prism init``.  Ensures that
+        dependencies from ``requirements*.txt`` are installed before
+        running, using a hash-based marker to skip redundant installs.
+        """
+        if warn:
+            logger.warning(
+                "Executing '%s' in project venv. "
+                "Results may differ from containerised execution.",
+                output_id,
+            )
+
+        venv_path = self.project_root / ".venv"
+        venv_python = venv_path / "bin" / "python"
+
+        if not venv_python.exists():
+            return ExecutionResult(
+                exit_code=1,
+                output_path=self.project_root / "results" / universe_id,
+                metadata={
+                    "stderr": (
+                        "No .venv found in project root. "
+                        "Run 'prism init' or create a virtual environment first."
+                    ),
+                    "backend": "venv",
+                },
+            )
+
+        # Ensure dependencies are installed
+        self._ensure_venv_deps(venv_path)
+
+        full_command = _substitute_python(command, str(venv_python))
+
+        env = {
+            **os.environ,
+            "VIRTUAL_ENV": str(venv_path),
+            "PATH": f"{venv_path / 'bin'}:{os.environ.get('PATH', '')}",
+        }
+
+        result = subprocess.run(
+            full_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=str(self.project_root),
+            env=env,
+        )
+
+        output_path = self.project_root / "results" / universe_id
+        return ExecutionResult(
+            exit_code=result.returncode,
+            output_path=output_path,
+            metadata={
+                "stdout": result.stdout[-2000:] if result.stdout else "",
+                "stderr": result.stderr[-2000:] if result.stderr else "",
+                "backend": "venv",
+                "venv_path": str(venv_path),
+            },
+        )
+
+    def _ensure_venv_deps(self, venv_path: Path) -> None:
+        """Install requirements into venv if they have changed.
+
+        Computes a hash of all ``requirements*.txt`` files and compares
+        it to a marker file (``.venv/.deps-hash``).  If the hash matches,
+        installation is skipped.  Once checked successfully within this
+        runner instance, subsequent calls are no-ops.
+        """
+        if self._venv_deps_checked:
+            return
+
+        from prism.container import find_dependency_files, hash_file_contents
+
+        dep_files = find_dependency_files(self.project_root)
+        req_files = [f for f in dep_files if f.name.startswith("requirements")]
+        if not req_files:
+            return
+
+        current_hash = hash_file_contents(req_files)
+
+        marker = venv_path / ".deps-hash"
+        if marker.exists() and marker.read_text().strip() == current_hash:
+            return
+
+        pip_path = venv_path / "bin" / "pip"
+        all_installed = True
+        for req_file in req_files:
+            logger.info("Installing dependencies from %s into .venv ...", req_file.name)
+            install_result = subprocess.run(
+                [str(pip_path), "install", "-r", str(req_file)],
+                capture_output=True,
+                text=True,
+                cwd=str(self.project_root),
+            )
+            if install_result.returncode != 0:
+                logger.warning(
+                    "pip install -r %s failed: %s",
+                    req_file.name, install_result.stderr[:200],
+                )
+                all_installed = False
+
+        # Only record the hash when all installs succeeded — a failed install
+        # that wrote the marker would be silently skipped on the next run.
+        if all_installed:
+            marker.write_text(current_hash + "\n")
+        self._venv_deps_checked = True
 
     def _run_slurm(
         self,
