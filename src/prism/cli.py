@@ -168,10 +168,17 @@ def _load_prism_config(project_path: Path) -> dict:
     default=None,
     help="Path to existing code to migrate (copies into DIRECTORY, adds Prism infrastructure)",
 )
+@click.option(
+    "--sub-analysis", "sub_analysis",
+    is_flag=True,
+    default=False,
+    help="Create a sub-analysis directory and wire it into the parent project",
+)
 def init(
     directory: Path, no_git: bool, no_venv: bool,
     target: str | None, permissions: str | None,
     existing_project: Path | None,
+    sub_analysis: bool,
 ) -> None:
     """Create a new ASTRA analysis project with full agentic scaffolding.
 
@@ -182,6 +189,9 @@ def init(
     source path differs from DIRECTORY, code is copied in. Then run
     /prism-migrate in Claude Code to generate the spec.
 
+    Use --sub-analysis to scaffold a sub-analysis directory and wire it
+    into the parent project's astra.yaml and universe files.
+
     DIRECTORY is the project folder to create (default: current directory).
 
     Examples:
@@ -189,7 +199,13 @@ def init(
         prism init my-analysis --target perlmutter-gpu
         prism init . --existing-project .
         prism init my-analysis --existing-project ../old-code
+        prism init analyses/new_stage --sub-analysis
+        prism init --sub-analysis new_stage
     """
+    if sub_analysis:
+        _init_sub_analysis(directory)
+        return
+
     if existing_project is not None:
         _init_existing_project(
             directory, source=existing_project,
@@ -295,6 +311,23 @@ def init(
         "  To disable, set [cyan]TRACE_TO_LANGFUSE=false[/cyan] "
         "in [cyan].claude/settings.local.json[/cyan]."
     )
+
+    # Detect SLURM environment and suggest interactive allocation
+    if shutil.which("salloc") and not os.environ.get("SLURM_JOB_ID"):
+        target_name = target
+        if not target_name:
+            from prism.dagster.targets import load_user_config
+            target_name = load_user_config().get("default_target")
+        if target_name and target_name != "local":
+            from prism.dagster.targets import load_target
+            target_config = load_target(target_name)
+            if target_config and target_config.get("backend") == "slurm":
+                console.print(
+                    "\n[bold]Tip:[/bold] For fast execution, start an interactive "
+                    "allocation ([cyan]salloc[/cyan]) before launching Claude Code. "
+                    "This lets [cyan]prism run[/cyan] execute instantly via srun "
+                    "instead of waiting in the batch queue."
+                )
 
     console.print(f"\n[bold]cd {directory}[/bold] && [bold]claude[/bold]")
     console.print("Then run [cyan]/prism-new[/cyan] to scope your research question.")
@@ -561,6 +594,98 @@ decisions:
   example_method: option_a
 """
     (directory / "universes" / "baseline.yaml").write_text(baseline_universe)
+
+
+def _init_sub_analysis(directory: Path) -> None:
+    """Scaffold a sub-analysis directory and wire it into the parent project."""
+    from astra.helpers import load_yaml, save_yaml
+
+    # Resolve the sub-analysis path.
+    # If directory has no path separator (e.g. "new_stage"), default to analyses/<name>
+    sub_path = directory
+    if sub_path == Path("."):
+        console.print("[red]Error:[/red] Please provide a name or path for the sub-analysis.")
+        raise SystemExit(1)
+
+    # If the user gave a bare name (no directory separators), put it under analyses/
+    if len(sub_path.parts) == 1:
+        sub_path = Path("analyses") / sub_path
+
+    name = sub_path.name
+
+    # Find the project root by looking for astra.yaml
+    project_root = Path.cwd()
+    if not (project_root / "astra.yaml").exists():
+        console.print(
+            "[red]Error:[/red] No astra.yaml found in current directory. "
+            "Run this from the project root."
+        )
+        raise SystemExit(1)
+
+    abs_sub_path = project_root / sub_path
+
+    if abs_sub_path.exists() and (abs_sub_path / "astra.yaml").exists():
+        console.print(
+            f"[red]Error:[/red] Sub-analysis already exists at "
+            f"[cyan]{sub_path}[/cyan] (astra.yaml found)."
+        )
+        raise SystemExit(1)
+
+    # 1. Create the sub-analysis directory structure
+    abs_sub_path.mkdir(parents=True, exist_ok=True)
+    (abs_sub_path / "scripts").mkdir(exist_ok=True)
+    (abs_sub_path / "scripts" / ".gitkeep").touch()
+    (abs_sub_path / "universes").mkdir(exist_ok=True)
+    (abs_sub_path / "results").mkdir(exist_ok=True)
+
+    # Write the sub-analysis astra.yaml
+    label = name.replace("_", " ").replace("-", " ").title()
+    sub_spec = {
+        "name": label,
+        "description": "",
+        "inputs": [],
+        "outputs": [],
+        "decisions": {},
+    }
+    save_yaml(sub_spec, abs_sub_path / "astra.yaml")
+
+    # Write the sub-analysis baseline universe
+    sub_universe = {
+        "id": "baseline",
+        "description": "Default configuration",
+        "decisions": {},
+    }
+    save_yaml(sub_universe, abs_sub_path / "universes" / "baseline.yaml")
+
+    # Write CLAUDE.md
+    _create_claude_md(abs_sub_path)
+
+    # 2. Wire into the parent astra.yaml
+    root_spec = load_yaml(project_root / "astra.yaml")
+    if "analyses" not in root_spec or root_spec["analyses"] is None:
+        root_spec["analyses"] = {}
+    root_spec["analyses"][name] = {"path": f"./{sub_path}"}
+    save_yaml(root_spec, project_root / "astra.yaml")
+
+    # 3. Wire into all root universe files
+    universes_dir = project_root / "universes"
+    if universes_dir.is_dir():
+        for ufile in sorted(universes_dir.glob("*.yaml")):
+            udata = load_yaml(ufile)
+            if udata is None:
+                continue
+            if "analyses" not in udata or udata["analyses"] is None:
+                udata["analyses"] = {}
+            udata["analyses"][name] = {"universe": "baseline"}
+            save_yaml(udata, ufile)
+
+    console.print(f"[green]\u2713[/green] Created sub-analysis [cyan]{name}[/cyan] at [cyan]{sub_path}[/cyan]")
+    console.print(f"  - {sub_path}/astra.yaml")
+    console.print(f"  - {sub_path}/CLAUDE.md")
+    console.print(f"  - {sub_path}/scripts/")
+    console.print(f"  - {sub_path}/results/")
+    console.print(f"  - {sub_path}/universes/baseline.yaml")
+    console.print(f"  - Wired into root astra.yaml and universe files")
 
 
 def _create_claude_md(directory: Path) -> None:
@@ -1048,12 +1173,17 @@ def _create_venv(directory: Path, no_venv: bool) -> bool:
 # =============================================================================
 
 
-@main.command()
-@click.argument("outputs", nargs=-1)
+@main.command(context_settings={
+    "ignore_unknown_options": True,
+    "allow_extra_args": True,
+})
+@click.argument("outputs", nargs=-1, type=click.UNPROCESSED)
 @click.option("--universe", "-u", default=None, help="Universe to materialize for")
 @click.option("--target", "-t", default=None, help="Execution target name")
 @click.option("--no-build", is_flag=True, help="Skip automatic container image builds")
+@click.pass_context
 def run(
+    ctx: click.Context,
     outputs: tuple[str, ...],
     universe: str | None,
     target: str | None,
@@ -1065,16 +1195,26 @@ def run(
     outputs for all universes. Container build specs are automatically
     built before execution unless --no-build is given.
 
+    Any unknown flags are passed through as SLURM scheduling directives
+    (e.g. --partition, --qos, --constraint, --gres).
+
     Examples:
         prism run                           # all outputs, all universes
         prism run accuracy                  # specific output
         prism run --universe baseline       # specific universe
         prism run accuracy -u baseline      # specific output + universe
-        prism run --target perlmutter-gpu   # run on SLURM
+        prism run --target perlmutter       # run on SLURM
+        prism run --qos shared --constraint gpu  # SLURM scheduling flags
+        prism run --partition gpu-a100      # works for any cluster
         prism run --no-build                # skip container builds
     """
     from prism.dagster.assets import build_definitions
     from prism.dagster.targets import load_target
+
+    # Separate output names from SLURM flags in the combined args
+    all_args = list(outputs) + ctx.args
+    output_names = [a for a in all_args if not a.startswith("-")]
+    slurm_args = [a for a in all_args if a.startswith("-")]
 
     project_path = Path.cwd()
     if not (project_path / "astra.yaml").exists():
@@ -1095,6 +1235,10 @@ def run(
     if target_name and target_name != "local":
         target_config = load_target(target_name)
 
+    # Pass through any extra SLURM flags
+    if slurm_args and target_config:
+        target_config["extra_slurm_args"] = slurm_args
+
     universe_id = universe or "baseline"
     defs = build_definitions(
         project_path, target_config=target_config, universe_id=universe_id,
@@ -1107,8 +1251,9 @@ def run(
 
     # Select assets to materialize (exclude external/input-only assets)
     all_assets = list(defs.get_all_asset_specs())
-    if outputs:
-        selection = [dg.AssetKey([universe_id, o]) for o in outputs]
+    if output_names:
+        # Support dot-notation: hod_fitting.galaxy_mesh -> [universe, hod_fitting, galaxy_mesh]
+        selection = [dg.AssetKey([universe_id] + o.split(".")) for o in output_names]
     else:
         selection = [
             spec.key for spec in all_assets
@@ -1172,7 +1317,7 @@ def build(force: bool, runtime: str | None) -> None:
         prism build --runtime docker     # force docker
         prism build --force              # rebuild all images
     """
-    from astra.helpers import get_outputs, load_yaml
+    from astra.helpers import get_outputs, load_yaml, resolve_analysis_tree
 
     from prism.container import (
         ContainerBuildError,
@@ -1207,6 +1352,7 @@ def build(force: bool, runtime: str | None) -> None:
                 raise SystemExit(1)
 
     spec = load_yaml(project_path / "astra.yaml")
+    spec = resolve_analysis_tree(spec, project_path)
     project_name = spec.get("name") or project_path.name
 
     # Collect all unique container build specs.
@@ -1256,6 +1402,69 @@ def build(force: bool, runtime: str | None) -> None:
             console.print(f"  [red]fail[/red]   {label}: {e}")
 
 
+def _status_label(s: str) -> str:
+    """Format a status string for rich display."""
+    if s == "materialized":
+        return "[green]ok[/green]"
+    elif s == "pending":
+        return "[dim]pending[/dim]"
+    elif s == "alias":
+        return "[cyan]alias[/cyan]"
+    return "[yellow]no recipe[/yellow]"
+
+
+def _display_tree_status(
+    name: str,
+    groups: dict,
+    all_status: dict[str, dict[str, str]],
+) -> None:
+    """Display status grouped by sub-analysis as a tree."""
+    from rich.tree import Tree
+
+    for uid, universe_status in all_status.items():
+        tree = Tree(f"[bold]{name}[/bold]  universe: {uid}")
+
+        for analysis_id, outputs in groups.items():
+            if analysis_id is None:
+                # Root-level outputs
+                for out_id, out_def in outputs:
+                    s = universe_status.get(out_id, "no_recipe")
+                    tree.add(f"{out_id:40s} {_status_label(s)}")
+            else:
+                branch = tree.add(f"[bold cyan]{analysis_id}/[/bold cyan]")
+                for out_id, out_def in outputs:
+                    qualified = f"{analysis_id}/{out_id}"
+                    s = universe_status.get(qualified, "no_recipe")
+                    branch.add(f"{out_id:40s} {_status_label(s)}")
+
+        console.print(tree)
+
+
+def _display_flat_status(
+    name: str,
+    outputs: list[tuple[str, dict]],
+    all_status: dict[str, dict[str, str]],
+) -> None:
+    """Display status as a flat table (original behavior)."""
+    from rich.table import Table
+
+    table = Table(title=f"{name} -- Output Status")
+    table.add_column("Output", style="cyan")
+    for uid in all_status:
+        table.add_column(uid)
+
+    for out_id, out_def in outputs:
+        if not out_id:
+            continue
+        row = [out_id]
+        for uid, universe_status in all_status.items():
+            s = universe_status.get(out_id, "no_recipe")
+            row.append(_status_label(s))
+        table.add_row(*row)
+
+    console.print(table)
+
+
 @main.command()
 @click.option("--universe", "-u", default=None, help="Show status for specific universe")
 def status(universe: str | None) -> None:
@@ -1267,7 +1476,7 @@ def status(universe: str | None) -> None:
         prism status
         prism status --universe baseline
     """
-    from astra.helpers import get_outputs, load_yaml
+    from astra.helpers import get_outputs, load_yaml, resolve_analysis_tree
 
     from prism.dagster.status import get_all_universe_status, get_output_status
 
@@ -1277,8 +1486,8 @@ def status(universe: str | None) -> None:
         raise SystemExit(1)
 
     spec = load_yaml(project_path / "astra.yaml")
+    spec = resolve_analysis_tree(spec, project_path)
     name = spec.get("name", "Unknown")
-    outputs = get_outputs(spec)
 
     if universe:
         all_status = {universe: get_output_status(project_path, universe)}
@@ -1289,41 +1498,54 @@ def status(universe: str | None) -> None:
         console.print("[yellow]No universes found.[/yellow]")
         return
 
-    from rich.table import Table
+    # Collect all qualified output IDs grouped by sub-analysis
+    from prism.dagster.tree import collect_tree_outputs
 
-    table = Table(title=f"{name} — Output Status")
-    table.add_column("Output", style="cyan")
-    for uid in all_status:
-        table.add_column(uid)
+    tree_outputs = collect_tree_outputs(spec)
 
+    # Group outputs by analysis_id (None for root)
+    from collections import OrderedDict
+
+    groups: OrderedDict[str | None, list[tuple[str, dict]]] = OrderedDict()
+    for tree_out in tree_outputs:
+        gid = tree_out.analysis_id
+        if gid not in groups:
+            groups[gid] = []
+        groups[gid].append((tree_out.output_id, tree_out.output_def))
+
+    # Display as tree when sub-analyses exist
+    has_sub = any(k is not None for k in groups)
+
+    if has_sub:
+        _display_tree_status(name, groups, all_status)
+    else:
+        _display_flat_status(name, groups.get(None, []), all_status)
+
+    # Count totals across all groups
     recipe_count = 0
-    total_outputs = len(outputs)
-    materialized = 0
+    total_outputs = 0
+    materialized_count = 0
     total_cells = 0
-    for out in outputs:
-        out_id = out.get("id")
+    for tree_out in tree_outputs:
+        out_id = tree_out.output_id
         if not out_id:
             continue
-        has_recipe = bool(out.get("recipe"))
+        total_outputs += 1
+        has_recipe = bool(tree_out.output_def.get("recipe"))
         if has_recipe:
             recipe_count += 1
-        row = [out_id]
+        if tree_out.analysis_id:
+            qualified = f"{tree_out.analysis_id}/{out_id}"
+        else:
+            qualified = out_id
         for uid, universe_status in all_status.items():
-            s = universe_status.get(out_id, "no_recipe")
             if has_recipe:
                 total_cells += 1
-            if s == "materialized":
-                materialized += 1
-                row.append("[green]ok[/green]")
-            elif s == "pending":
-                row.append("[dim]pending[/dim]")
-            else:
-                row.append("[yellow]no recipe[/yellow]")
-        table.add_row(*row)
+            if universe_status.get(qualified) == "materialized":
+                materialized_count += 1
 
-    console.print(table)
     console.print(f"\n  Recipes: {recipe_count}/{total_outputs} outputs integrated")
-    console.print(f"  Materialized: {materialized}/{total_cells} runs")
+    console.print(f"  Materialized: {materialized_count}/{total_cells} runs")
 
     # Show container status
     from prism.container import detect_container_runtime, get_container_status
@@ -1823,150 +2045,107 @@ def _run_setup_wizard() -> list[Path]:
         # --- HPC site selection ---
         known = list_known_sites()
         hpc_sites = [(k, d) for k, d in known if k != "local"]
-        console.print("\n  [bold]Known HPC sites:[/bold]")
+        console.print("\n  [bold]HPC sites:[/bold]")
         for i, (_key, display) in enumerate(hpc_sites, 1):
             console.print(f"    {i}. {display}")
+        console.print(f"    {len(hpc_sites) + 1}. Other SLURM cluster")
 
-        site_choices = [str(i) for i in range(1, len(hpc_sites) + 1)]
+        site_choices = [str(i) for i in range(1, len(hpc_sites) + 2)]
         site_idx = click.prompt(
             "\n  Select site",
             type=click.Choice(site_choices),
             default="1",
         )
-        site_key = hpc_sites[int(site_idx) - 1][0]
-        site = get_site_defaults(site_key) or {}
+        selected_idx = int(site_idx) - 1
 
-        display = site.get("display_name", site_key)
-        hostname = site.get("connection", {}).get("hostname", "")
-        console.print(
-            f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
-        )
+        if selected_idx < len(hpc_sites):
+            # --- Known site ---
+            site_key = hpc_sites[selected_idx][0]
+            site = get_site_defaults(site_key) or {}
 
-        # --- Connection ---
-        username = click.prompt(
-            "  Username",
-            default=os.environ.get("USER", ""),
-        )
-        account = click.prompt("  Account/allocation")
-
-        # --- Container runtime ---
-        site_runtimes = site.get("container_runtimes", [])
-        if len(site_runtimes) > 1:
-            console.print("\n  [bold]Container runtime:[/bold]")
-            for i, rt in enumerate(site_runtimes, 1):
-                console.print(f"    {i}. {rt}")
-
-            rt_choices = [
-                str(i) for i in range(1, len(site_runtimes) + 1)
-            ]
-            rt_idx = click.prompt(
-                "  Select runtime",
-                type=click.Choice(rt_choices),
-                default="1",
+            display = site.get("display_name", site_key)
+            hostname = site.get("connection", {}).get("hostname", "")
+            console.print(
+                f"  Detected: [cyan]{display}[/cyan] ({hostname})\n"
             )
-            container_runtime = site_runtimes[int(rt_idx) - 1]
-        elif site_runtimes:
-            container_runtime = site_runtimes[0]
-        else:
-            container_runtime = site.get(
-                "scheduler", {},
-            ).get("container_runtime", "docker")
 
-        # --- Node type selection ---
-        node_types = site.get("node_types", {})
-        resource_limits = site.get("resource_limits", {})
-        nt_keys = list(node_types.keys())
-
-        if len(nt_keys) > 1:
-            console.print("\n  [bold]Node types:[/bold]")
-            for i, nt_key in enumerate(nt_keys, 1):
-                desc = node_types[nt_key].get("description", nt_key)
-                console.print(f"    {i}. {nt_key} — {desc}")
-
-            nt_choices = [str(i) for i in range(1, len(nt_keys) + 1)]
-            nt_idx = click.prompt(
-                "  Select node type",
-                type=click.Choice(nt_choices),
-                default="1",
+            username = click.prompt(
+                "  Username",
+                default=os.environ.get("USER", ""),
             )
-            selected_nt = nt_keys[int(nt_idx) - 1]
-        elif nt_keys:
-            selected_nt = nt_keys[0]
+            account = click.prompt("  Account/allocation")
+
+            # Container runtime — auto-select if only one
+            site_runtimes = site.get("container_runtimes", [])
+            if len(site_runtimes) > 1:
+                console.print("\n  [bold]Container runtime:[/bold]")
+                for i, rt in enumerate(site_runtimes, 1):
+                    console.print(f"    {i}. {rt}")
+                rt_choices = [
+                    str(i) for i in range(1, len(site_runtimes) + 1)
+                ]
+                rt_idx = click.prompt(
+                    "  Select runtime",
+                    type=click.Choice(rt_choices),
+                    default="1",
+                )
+                container_runtime = site_runtimes[int(rt_idx) - 1]
+            elif site_runtimes:
+                container_runtime = site_runtimes[0]
+            else:
+                container_runtime = None
+
+            default_name = f"{site_key}-{account}"
+            target_name = click.prompt("  Target name", default=default_name)
+
+            target_config: dict[str, Any] = {
+                "site": site_key,
+                "backend": site.get("backend", "slurm"),
+                "connection": {
+                    "hostname": hostname,
+                    "username": username,
+                },
+                "account": account,
+            }
+            if container_runtime:
+                target_config["container_runtime"] = container_runtime
+
         else:
-            selected_nt = "default"
+            # --- Custom SLURM cluster ---
+            console.print("\n  [bold]Custom SLURM cluster[/bold]\n")
 
-        # --- QOS selection ---
-        qos_options = site.get("qos_options", {})
-        qos_keys = list(qos_options.keys())
-
-        if len(qos_keys) > 1:
-            # Find default QOS
-            qos_default_idx = "1"
-            for i, qk in enumerate(qos_keys, 1):
-                if qos_options[qk].get("default"):
-                    qos_default_idx = str(i)
-                    break
-
-            console.print("\n  [bold]QOS:[/bold]")
-            for i, qk in enumerate(qos_keys, 1):
-                desc = qos_options[qk].get("description", qk)
-                console.print(f"    {i}. {qk} — {desc}")
-
-            qos_choices = [str(i) for i in range(1, len(qos_keys) + 1)]
-            qos_idx = click.prompt(
-                "  Select QOS",
-                type=click.Choice(qos_choices),
-                default=qos_default_idx,
+            cluster_name = click.prompt("  Cluster name (e.g. frontier, summit)")
+            hostname = click.prompt("  Hostname", default=cluster_name)
+            username = click.prompt(
+                "  Username",
+                default=os.environ.get("USER", ""),
             )
-            selected_qos = qos_keys[int(qos_idx) - 1]
-        elif qos_keys:
-            selected_qos = qos_keys[0]
-        else:
-            selected_qos = site.get("safe_defaults", {}).get("qos", "regular")
+            account = click.prompt("  Account/allocation")
 
-        # --- Target name ---
-        nt_info = node_types.get(selected_nt, {})
-        default_name = f"{site_key}-{selected_nt}"
-        target_name = click.prompt("  Target name", default=default_name)
+            use_containers = click.confirm(
+                "  Use a container runtime?",
+                default=False,
+            )
+            container_runtime = None
+            if use_containers:
+                container_runtime = click.prompt(
+                    "  Container runtime",
+                    default="singularity",
+                )
 
-        target_config: dict[str, Any] = {
-            "site": site_key,
-            "backend": site.get("backend", "slurm"),
-            "connection": {
-                "hostname": hostname,
-                "username": username,
-            },
-            "account": account,
-            "container_runtime": container_runtime,
-            "constraint": nt_info.get("constraint", selected_nt),
-            "qos": selected_qos,
-        }
+            default_name = f"{cluster_name}-{account}"
+            target_name = click.prompt("  Target name", default=default_name)
 
-        # --- Resource limits ---
-        console.print("\n  [bold]Resource limits[/bold]")
-        console.print("  (these cap what Claude can request per job)\n")
-
-        max_nodes = click.prompt(
-            "  Max nodes per job",
-            type=int,
-            default=resource_limits.get("max_nodes", 4),
-        )
-        target_config["max_nodes"] = max_nodes
-
-        max_walltime = click.prompt(
-            "  Max walltime (minutes)",
-            type=int,
-            default=resource_limits.get("max_walltime_minutes", 360),
-        )
-        target_config["max_walltime_minutes"] = max_walltime
-
-        max_concurrent = click.prompt(
-            "  Max concurrent jobs",
-            type=int,
-            default=resource_limits.get("max_concurrent_jobs", 8),
-        )
-        target_config["max_concurrent_jobs"] = max_concurrent
-
+            target_config = {
+                "backend": "slurm",
+                "connection": {
+                    "hostname": hostname,
+                    "username": username,
+                },
+                "account": account,
+            }
+            if container_runtime:
+                target_config["container_runtime"] = container_runtime
 
         path = save_target(target_name, target_config)
         saved_paths.append(path)

@@ -82,6 +82,32 @@ def _run_streaming(
     return proc.returncode, "".join(stdout_tail), "".join(stderr_tail)
 
 
+
+def _find_venv(cwd: str | None, project_root: Path) -> Path | None:
+    """Find .venv by checking cwd first, then walking up to project_root."""
+    if cwd:
+        cwd_path = Path(cwd)
+        venv = cwd_path / ".venv"
+        if (venv / "bin" / "python").exists():
+            return venv
+        # Walk up to project_root
+        current = cwd_path.parent
+        root_resolved = project_root.resolve()
+        while current >= root_resolved:
+            venv = current / ".venv"
+            if (venv / "bin" / "python").exists():
+                return venv
+            if current == root_resolved:
+                break
+            current = current.parent
+
+    # Fall back to project root
+    venv = project_root / ".venv"
+    if (venv / "bin" / "python").exists():
+        return venv
+    return None
+
+
 def _substitute_python(command: str, python_path: str) -> str:
     """Replace a leading ``python `` with a specific interpreter path."""
     if command.startswith("python "):
@@ -150,6 +176,7 @@ class ASTRAContainerRunner:
         resources: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         external_inputs: dict[str, str] | None = None,
+        cwd_override: str | None = None,
     ) -> ExecutionResult:
         """Execute a recipe, dispatching to the configured backend.
 
@@ -161,8 +188,14 @@ class ASTRAContainerRunner:
         results_dir = self.project_root / "results" / universe_id
         results_dir.mkdir(parents=True, exist_ok=True)
 
+        # Effective working directory: cwd_override (for sub-analysis recipes)
+        # or project_root
+        effective_cwd = cwd_override or str(self.project_root)
+
         if self.backend == "local":
-            return self._run_local(full_command, output_id, universe_id)
+            return self._run_local(
+                full_command, output_id, universe_id, cwd=effective_cwd,
+            )
 
         if self.backend == "slurm":
             return self._run_slurm(
@@ -173,10 +206,13 @@ class ASTRAContainerRunner:
                 universe_id=universe_id,
                 resources=resources or {},
                 external_inputs=external_inputs,
+                cwd=effective_cwd,
             )
 
         if self.backend == "venv":
-            return self._run_venv(full_command, output_id, universe_id)
+            return self._run_venv(
+                full_command, output_id, universe_id, cwd=effective_cwd,
+            )
 
         # Container backend — try container runtime, fall back to venv or local.
         # Note: the explicit "local" backend (set via target config) skips dep
@@ -209,6 +245,7 @@ class ASTRAContainerRunner:
                 output_id=output_id,
                 universe_id=universe_id,
                 warn=effective_container is not None,
+                cwd=effective_cwd,
             )
 
         # No .venv available — fall back to the current Python environment so
@@ -224,6 +261,7 @@ class ASTRAContainerRunner:
             output_id=output_id,
             universe_id=universe_id,
             warn=effective_container is not None,
+            cwd=effective_cwd,
         )
 
     def _run_container(
@@ -274,6 +312,7 @@ class ASTRAContainerRunner:
         output_id: str,
         universe_id: str,
         warn: bool = False,
+        cwd: str | None = None,
     ) -> ExecutionResult:
         """Execute a recipe as a local subprocess.
 
@@ -290,7 +329,7 @@ class ASTRAContainerRunner:
         full_command = _substitute_python(command, sys.executable)
 
         returncode, stdout_tail, stderr_tail = _run_streaming(
-            full_command, shell=True, cwd=str(self.project_root),
+            full_command, shell=True, cwd=cwd or str(self.project_root),
         )
 
         output_path = self.project_root / "results" / universe_id
@@ -310,12 +349,16 @@ class ASTRAContainerRunner:
         output_id: str,
         universe_id: str,
         warn: bool = False,
+        cwd: str | None = None,
     ) -> ExecutionResult:
         """Execute a recipe in the project's virtual environment.
 
         Uses the ``.venv/`` created by ``prism init``.  Ensures that
         dependencies from ``requirements*.txt`` are installed before
         running, using a hash-based marker to skip redundant installs.
+
+        For sub-analysis recipes, the venv is resolved by walking up from
+        the working directory to the project root.
         """
         if warn:
             logger.warning(
@@ -324,10 +367,10 @@ class ASTRAContainerRunner:
                 output_id,
             )
 
-        venv_path = self.project_root / ".venv"
-        venv_python = venv_path / "bin" / "python"
+        # Find venv: check cwd first, then walk up to project root
+        venv_path = _find_venv(cwd, self.project_root)
 
-        if not venv_python.exists():
+        if venv_path is None:
             return ExecutionResult(
                 exit_code=1,
                 output_path=self.project_root / "results" / universe_id,
@@ -339,6 +382,8 @@ class ASTRAContainerRunner:
                     "backend": "venv",
                 },
             )
+
+        venv_python = venv_path / "bin" / "python"
 
         # Ensure dependencies are installed
         self._ensure_venv_deps(venv_path)
@@ -352,7 +397,7 @@ class ASTRAContainerRunner:
         }
 
         returncode, stdout_tail, stderr_tail = _run_streaming(
-            full_command, shell=True, cwd=str(self.project_root), env=env,
+            full_command, shell=True, cwd=cwd or str(self.project_root), env=env,
         )
 
         output_path = self.project_root / "results" / universe_id
@@ -414,6 +459,75 @@ class ASTRAContainerRunner:
             marker.write_text(current_hash + "\n")
         self._venv_deps_checked = True
 
+    def _run_slurm_interactive(
+        self,
+        command: str,
+        container: str | None,
+        output_id: str,
+        universe_id: str,
+        resources: dict[str, Any],
+        external_inputs: dict[str, str] | None = None,
+        cwd: str | None = None,
+    ) -> ExecutionResult:
+        """Execute a recipe via srun inside an existing interactive allocation.
+
+        Runs synchronously — no job submission or polling needed.
+        """
+        effective_cwd = cwd or str(self.project_root)
+        scheduler = self.target_config.get("scheduler", {})
+        container_runtime = scheduler.get("container_runtime", "podman-hpc")
+
+        output_path = Path(effective_cwd) / "results" / universe_id
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Build the execution command
+        if container and container_runtime == "podman-hpc":
+            exec_command = _podman_hpc_run_command(
+                command, container, self.project_root, resources, scheduler,
+                external_inputs=external_inputs,
+            )
+        else:
+            # No container — symlink external inputs into data/ directory
+            if external_inputs:
+                data_dir = Path(effective_cwd) / "data"
+                data_dir.mkdir(parents=True, exist_ok=True)
+                for input_id, source in sorted(external_inputs.items()):
+                    link = data_dir / input_id
+                    if link.is_symlink() or link.exists():
+                        link.unlink()
+                    link.symlink_to(source)
+            exec_command = command
+
+        cmd = ["srun", "bash", "-c", exec_command]
+
+        logger.info(
+            "Running %s/%s interactively (SLURM_JOB_ID=%s)",
+            output_id, universe_id, os.environ.get("SLURM_JOB_ID"),
+        )
+
+        try:
+            returncode, stdout_tail, stderr_tail = _run_streaming(
+                cmd, cwd=effective_cwd,
+            )
+        except FileNotFoundError:
+            return ExecutionResult(
+                exit_code=127,
+                output_path=output_path,
+                metadata={"stderr": "srun: command not found"},
+            )
+
+        return ExecutionResult(
+            exit_code=returncode,
+            output_path=output_path,
+            metadata={
+                "backend": "slurm-interactive",
+                "slurm_job_id": os.environ.get("SLURM_JOB_ID", ""),
+                "container_runtime": container_runtime if container else None,
+                "stdout": stdout_tail,
+                "stderr": stderr_tail,
+            },
+        )
+
     def _run_slurm(
         self,
         command: str,
@@ -423,14 +537,27 @@ class ASTRAContainerRunner:
         universe_id: str,
         resources: dict[str, Any],
         external_inputs: dict[str, str] | None = None,
+        cwd: str | None = None,
     ) -> ExecutionResult:
-        """Execute a recipe via SLURM on a login node.
+        """Execute a recipe via SLURM.
 
-        Generates an sbatch script with the appropriate container runtime
-        (podman-hpc or shifter), submits it, and polls for completion.
-        Assumes we are running on a login node with access to sbatch/squeue/sacct
-        and the project directory is on a shared filesystem.
+        When ``SLURM_JOB_ID`` is set (i.e. we are inside an interactive
+        ``salloc`` session), runs the command synchronously via ``srun``
+        for fast iteration.  Otherwise, generates an sbatch script,
+        submits it, and polls for completion.
         """
+        # Fast path: interactive allocation detected
+        if os.environ.get("SLURM_JOB_ID"):
+            return self._run_slurm_interactive(
+                command=command,
+                container=container,
+                output_id=output_id,
+                universe_id=universe_id,
+                resources=resources,
+                external_inputs=external_inputs,
+                cwd=cwd,
+            )
+
         scheduler = self.target_config.get("scheduler", {})
         container_runtime = scheduler.get("container_runtime", "podman-hpc")
 
@@ -559,14 +686,36 @@ def translate_resources_to_slurm_directives(
     scheduler_config = scheduler_config or {}
     directives: list[str] = []
 
-    if account := scheduler_config.get("account"):
+    # Extra SLURM args from CLI passthrough (e.g. --partition, --qos, --constraint)
+    extra_args = scheduler_config.get("extra_slurm_args", [])
+
+    # Helper to check if a flag is already in extra args (CLI overrides target)
+    def _in_extra(flag: str) -> bool:
+        return any(a.startswith(flag) for a in extra_args)
+
+    # Extract constraint from extra args for account suffix resolution
+    constraint = scheduler_config.get("constraint")
+    for arg in extra_args:
+        if arg.startswith("--constraint"):
+            constraint = arg.split("=", 1)[1] if "=" in arg else None
+
+    account = scheduler_config.get("account")
+    # Apply site-specific account suffix (e.g. _g for GPU on Perlmutter)
+    if account and not _in_extra("--account"):
+        site_key = scheduler_config.get("site")
+        if site_key and constraint:
+            from prism.dagster.site_registry import resolve_account
+            account = resolve_account(site_key, account, constraint)
         directives.append(f"--account={account}")
-    if partition := scheduler_config.get("partition"):
-        directives.append(f"--partition={partition}")
-    if qos := scheduler_config.get("qos"):
-        directives.append(f"--qos={qos}")
-    if constraint := scheduler_config.get("constraint"):
-        directives.append(f"--constraint={constraint}")
+    if not _in_extra("--partition"):
+        if partition := scheduler_config.get("partition"):
+            directives.append(f"--partition={partition}")
+    if not _in_extra("--qos"):
+        if qos := scheduler_config.get("qos"):
+            directives.append(f"--qos={qos}")
+    if not _in_extra("--constraint"):
+        if constraint:
+            directives.append(f"--constraint={constraint}")
 
     if nodes := resources.get("nodes"):
         directives.append(f"--nodes={nodes}")
@@ -574,8 +723,9 @@ def translate_resources_to_slurm_directives(
         directives.append(f"--cpus-per-task={cpus}")
     if memory := resources.get("memory"):
         directives.append(f"--mem={memory}")
-    if gpus := resources.get("gpus"):
-        directives.append(f"--gpus={gpus}")
+    if not _in_extra("--gpus"):
+        if gpus := resources.get("gpus"):
+            directives.append(f"--gpus={gpus}")
     if time_limit := resources.get("time_limit"):
         directives.append(f"--time={_normalise_time_limit(time_limit)}")
     elif resource_limits is not None:
@@ -588,6 +738,9 @@ def translate_resources_to_slurm_directives(
             default_minutes,
         )
         directives.append(f"--time={_normalise_time_limit(default_minutes)}")
+
+    # Append any extra SLURM flags passed through from the CLI
+    directives.extend(extra_args)
 
     return directives
 
