@@ -8,17 +8,13 @@ An `astra.yaml` spec captures this for a single unit of work. The structure is *
 
 ## astra.yaml Structure
 
-Fields: `name`, `description`, `version`, `authors`, `tags`, `inputs`, `outputs`, `decisions`, `prior_insights`, `findings`, `analyses`, `container`, `success_criteria`.
+Fields: `name`, `description`, `version`, `authors`, `tags`, `inputs`, `outputs`, `decisions`, `prior_insights`, `findings`, `analyses`, `container`.
 
 ```yaml
 # Simple analysis -- everything at top level
 version: "1.0"
 name: "My Analysis"
 description: "What this analysis investigates."
-success_criteria:
-  - claim: "Achieve >95% accuracy on held-out test set"
-    output: accuracy
-    condition: "value > 0.95"
 inputs:
   - id: training_data
     type: data
@@ -49,8 +45,7 @@ outputs:
     type: metric
     recipe:
       command: python scripts/evaluate.py
-container:
-  build: Containerfile
+container: Containerfile
 ```
 
 ## Decisions
@@ -109,7 +104,7 @@ outputs:
       resources: { cpus: 4, memory: "32GB", gpus: 1, time_limit: "2h" }
 ```
 
-Set `container:` at analysis level (all recipes inherit); per-recipe `container:` overrides. Accepts a build spec (`{ build: Containerfile }`) or image string (`"python:3.12-slim"`).
+Set `container:` at analysis level (all recipes inherit); per-recipe `container:` overrides. Pass either a container image name (e.g., `python:3.12-slim`, `ghcr.io/org/img:latest`) or a path to a Containerfile (e.g., `Containerfile`, `containers/Dockerfile`). The runtime figures out whether to pull or build.
 
 ### Conditional Outputs
 
