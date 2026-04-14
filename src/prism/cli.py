@@ -82,7 +82,7 @@ def _get_plugin_source_dir() -> Path | None:
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name="lightcone-prism")
 @click.pass_context
 def main(ctx: click.Context) -> None:
     """Prism - ASTRA-compliant Agentic Layer CLI."""
