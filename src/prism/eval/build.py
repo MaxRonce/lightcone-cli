@@ -67,7 +67,7 @@ def _build_wheel(repo_root: Path, outdir: Path) -> Path:
 
     wheels = list(outdir.glob("lightcone_prism-*.whl"))
     if not wheels:
-        raise RuntimeError(f"No prism wheel found in {outdir} after build")
+        raise RuntimeError(f"No lightcone_prism wheel found in {outdir} after build")
     return wheels[0]
 
 
