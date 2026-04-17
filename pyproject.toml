@@ -20,7 +20,7 @@ dependencies = [
     "langfuse>=2.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 eval = [
     "anthropic>=0.40",
     "build>=1.0",
@@ -35,6 +35,10 @@ dev = [
     "mypy",
     "types-PyYAML",
 ]
+docs = [
+    "zensical>=0.0.33",
+]
+
 
 [project.scripts]
 prism = "prism.cli:main"
