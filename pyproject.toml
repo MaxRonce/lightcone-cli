@@ -1,7 +1,7 @@
 [project]
 name = "lightcone-cli"
 dynamic = ["version"]
-description = "Lightcone command-line toolchain (agentic layer for ASTRA)"
+description = "Lightcone command-line toolchain"
 # readme = "README.md"
 license = { text = "BSD-3-Clause" }
 requires-python = ">=3.11"
