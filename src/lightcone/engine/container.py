@@ -40,13 +40,18 @@ from pathlib import Path
 
 import yaml
 
+from lightcone.engine.site_registry import detect_current_site
+
 logger = logging.getLogger(__name__)
 
-#: Runtimes we know how to build and run with. Order is detection priority:
-#: podman first (rootless, no daemon to wedge), then docker (still common on
-#: laptops; we additionally probe ``docker info`` so a down daemon doesn't
-#: silently win over a healthy podman), then podman-hpc on login nodes.
-RUNTIMES: tuple[str, ...] = ("podman", "docker", "podman-hpc")
+#: Supported runtimes, in fallback detection order. The site registry can
+#: move a site's declared ``container_runtime`` to the front (see
+#: :func:`detect_runtime`). Order rationale: podman-hpc first because
+#: anyone who installed the HPC wrapper did so on purpose and plain
+#: podman would build images compute nodes can't read; then podman
+#: (rootless, no daemon); docker last, gated behind a ``docker info``
+#: probe so a down daemon doesn't silently win over a healthy podman.
+RUNTIMES: tuple[str, ...] = ("podman-hpc", "podman", "docker")
 
 #: Files whose contents contribute to the image tag hash.
 DEPENDENCY_FILES = (
@@ -143,21 +148,39 @@ class RuntimeChoice:
 
 
 def detect_runtime() -> str | None:
-    """Return the first usable runtime in :data:`RUNTIMES`, or ``None``.
+    """Return the first usable runtime in :func:`_detection_order`, or ``None``.
 
-    A runtime is "usable" when its binary is on PATH and (for docker)
-    its daemon answers ``docker info``. Without the daemon probe, a
-    laptop with docker installed but its daemon stopped would resolve
-    to docker and every recipe would fail with a socket error — even
-    when a healthy podman is sitting right next to it.
+    "Usable" means the binary is on PATH and (for docker) its daemon
+    answers ``docker info``. Site-declared preferences (e.g. Perlmutter
+    → podman-hpc) are *hints* — missing-from-PATH falls through to the
+    next candidate. Errors on missing-but-explicit user config are
+    :func:`load_runtime`'s job.
     """
-    for runtime in RUNTIMES:
+    for runtime in _detection_order():
         if shutil.which(runtime) is None:
             continue
         if runtime == "docker" and not _docker_daemon_up():
             continue
         return runtime
     return None
+
+
+def _detection_order() -> tuple[str, ...]:
+    """RUNTIMES with the host site's preferred runtime moved to the front."""
+    preferred = _site_preferred_runtime()
+    if preferred is None:
+        return RUNTIMES
+    return (preferred, *(r for r in RUNTIMES if r != preferred))
+
+
+def _site_preferred_runtime() -> str | None:
+    """Return the host site's declared ``container_runtime``, else ``None``.
+
+    Returns ``None`` when no site matches, no preference is declared, or
+    the declared value is not a known runtime — never raises.
+    """
+    preferred = detect_current_site().get("container_runtime")
+    return preferred if preferred in RUNTIMES else None
 
 
 def _docker_daemon_up() -> bool:
