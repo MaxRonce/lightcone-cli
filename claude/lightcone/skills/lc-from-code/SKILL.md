@@ -1,20 +1,28 @@
 ---
-name: lc-migrate
-description: Migrate an existing project into ASTRA / lightcone-cli. Scans code, generates astra.yaml, parameterizes decisions, and runs until outputs materialize. Triggers on "migrate", "convert", "existing project".
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(astra:*), Bash(lc:*), Bash(python:*), Bash(pip:*), Bash(git:*), Bash(mkdir:*), Bash(ls:*), Agent, AskUserQuestion
+name: lc-from-code
+description: Bring an existing project into ASTRA / lightcone-cli, starting from the code. Scans the codebase, drafts or augments astra.yaml, parameterizes decisions, and runs until outputs materialize. Triggers on "migrate", "convert", "existing project", "wrap this code", "start from code".
 ---
 
-# /lc-migrate
+# /lc-from-code
 
-End-to-end migration: scan existing code, generate the ASTRA spec, parameterize decisions in the code, and run until everything materializes. The user's existing logic stays intact — changes should be minimal.
+End-to-end migration: scan existing code, draft or add to `astra.yaml`, parameterize decisions in the code, and run until everything materializes. This works both as a fresh start from code and as an augmenting pass inside an existing ASTRA project. The user's existing logic stays intact — changes should be minimal.
 
-## References
+## Invocation contexts
 
-- [ASTRA Reference](../../guides/astra-reference.md) -- spec structure, decision identification, recipes, universes
+This skill has two invocation contexts. The first is the user-driven default described in the phases below: do the full scan → spec → parameterize → run flow.
+
+The second is **scan-only**, used when `/lc-from-paper`'s ORIENT Stage 4 invokes this skill against a cloned reference repo at `work/reference/code/`. The invocation prompt will tell you explicitly to *do only Phase 1's scan*, write the inventory to a path it specifies (typically `work/reference/code-index.md`), and **stop** — do not touch `astra.yaml` at the project root, do not parameterize any code, do not run anything, do not modify the cloned repo. Reach for an Explore sub-agent (or parallel Explore spawns when the repo is large enough that one survey misses the breadth) — that's the cost-effective tool for inventorying a real codebase, and there's no longer any nested-context concern that would forbid it. Trust the invocation prompt's instructions over the fresh-migration defaults below; if the prompt says scan-only, the scan-only contract holds (stop after writing the inventory file).
 
 ## Phase 1: Scan & Spec
 
-First, read the Decisions section of [ASTRA Reference](../../guides/astra-reference.md), then spawn an Explore subagent to scan the project. Include the decision criteria in the prompt so the subagent can classify candidates:
+First, invoke `/astra` and read its Decisions section, then decide which mode applies:
+
+- **Fresh migration:** no meaningful `astra.yaml` exists yet. Use the code scan to draft `astra.yaml` and `universes/baseline.yaml`.
+- **Augment existing ASTRA:** `astra.yaml` already exists from a paper, user interview, or prior ASTRA work. Use the code scan to add to the current spec — recipes, dependencies, containers, code-backed decision options, baseline selections, implementation notes, and missing inputs / outputs where they naturally belong. Do not create a second `astra.yaml`, do not replace the existing structure wholesale, and surface major structure conflicts to the user before reshaping the spec.
+
+### Scanning the project
+
+In both modes, spawn an Explore sub-agent to scan the project. Include the decision criteria in the prompt so the sub-agent can classify candidates:
 
 ```
 Agent(subagent_type="Explore", prompt="""
@@ -40,16 +48,20 @@ Return the results as a markdown table:
 
 And a separate list of ALL candidate decisions with file:line references.
 Err on the side of completeness — include anything that could plausibly
-be an analytical choice. The orchestrator will filter down later.
+be an analytical choice. The caller will filter down later.
 
 For reference, here are the decision criteria for classifying candidates:
 <decision-criteria>
-{paste Decisions section from astra-reference.md here}
+{paste Decisions section from `/astra` here}
 </decision-criteria>
 """)
 ```
 
-Write the scan results to `CLAUDE.md` under `## Project Notes` as a script inventory, then draft `astra.yaml` from the scan results following the spec structure documented in `.claude/guides/astra-reference.md`. Use the decision criteria from [ASTRA Reference](../../guides/astra-reference.md) to filter the subagent's candidate decisions down to only true analytical choices — most hardcoded values are implementation details, not decisions. Use current hardcoded values as defaults.
+When the codebase is large enough that one Explore pass risks missing depth (a multi-project monorepo, a workflow folder plus a notebooks tree plus a `src/` package), spawn Explores in parallel against the named subtrees — one Explore per coherent region. Aggregate their inventories into the final scan output.
+
+Write the scan results to `CLAUDE.md` under `## Project Notes` (fresh migration) or to the path the invocation prompt specifies (scan-only — typically `work/reference/code-index.md`) as a script inventory, then in fresh migration mode draft or add to `astra.yaml` from the scan results following the spec structure documented in `/astra`. In scan-only mode, stop after the inventory file lands; do not touch `astra.yaml`. Use the decision criteria from `/astra` (Decisions section) to filter candidate decisions down to only true analytical choices — most hardcoded values are implementation details, not decisions. Use current hardcoded values as defaults.
+
+In augment mode, preserve the existing paper-derived or user-derived `inputs`, `outputs`, `decisions`, `findings`, and `narrative` unless the code scan shows a real conflict. Attach code evidence to the nearest existing home first. Create new ASTRA structure only when the code reveals a real analysis object that has no suitable home in the current spec.
 
 For each output, list the upstream artifacts it depends on under `Output.inputs: [...]` and the decisions it consumes under `Output.decisions: [...]`. Then add a `recipe.command` template that references each via `{inputs.<id>}` / `{decisions.<id>}` and writes to `{output}`. Example:
 
@@ -68,7 +80,7 @@ outputs:
         --output {output}
 ```
 
-Also generate `universes/baseline.yaml` with all defaults matching the current hardcoded values (so the first run reproduces existing behavior).
+Also generate or update `universes/baseline.yaml` with all defaults matching the current hardcoded values (so the first run reproduces existing behavior).
 
 Write to `astra.yaml` and `universes/baseline.yaml`, then validate: `astra validate astra.yaml`. Fix any errors.
 
@@ -76,7 +88,7 @@ Use `AskUserQuestion` to ask the user to review the spec — they can open `astr
 
 ## Phase 2: Implement
 
-Parameterize the code so decisions can be varied across universes. The goal is minimal changes to user code. Use your best judgement for the approach — the options below are not exhaustive:
+Parameterize the code from ASTRA decisions so the baseline run reproduces the existing behavior. The goal is minimal changes to user code. Use your best judgement for the approach — the options below are not exhaustive:
 
 **For scripts with hardcoded values:** Add argparse (or extend existing argument parsing) and replace hardcoded values with the parsed args. This is the simplest case.
 

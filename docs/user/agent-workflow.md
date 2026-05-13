@@ -1,9 +1,16 @@
 # The Agentic Workflow
 
-The agentic surface is five slash commands. Each one is a structured
-prompt — the agent follows a specific phased flow, not free-form chat.
-This page walks through each of them in the order you'd naturally hit
-them.
+The agentic surface is three entry slash commands plus feedback. The
+`/lc-from-*` family is parallel by what you start from — a question,
+code, or a paper — and `/lc-feedback` handles bug reports. Each one is
+a structured prompt: the agent follows a specific phased flow, not
+free-form chat. This page walks through each of them in the order you'd
+naturally hit them.
+
+The skills are structured entry points; they aren't requirements. Once
+you're inside a project, you can also just describe what you're working
+on to Claude — `astra.yaml` and the `lc` CLI keep things tracked
+whether you go through a skill or not.
 
 > The bracketed `→ astra.yaml` etc. notes show what each phase actually
 > writes to disk. You stay in charge of approving everything; the agent
@@ -40,61 +47,19 @@ The skill walks you through four phases:
    gets the conversational context that wouldn't otherwise survive a
    `/clear`.
 
-You don't write any code or YAML during `/lc-new`. By the time it
-finishes, you have a precise specification. The agent enforces this:
-the skill is *only allowed* to edit `astra.yaml`, files in
+You don't write any code or YAML during `/lc-new`. By the
+time it finishes, you have a precise specification. The agent enforces
+this: the skill is *only allowed* to edit `astra.yaml`, files in
 `universes/`, and `CLAUDE.md`.
 
-## `/lc-build` — implement and run
-
-**You have a scoped `astra.yaml`. You end with materialized outputs.**
-
-This is the longest-running skill. It has two phases.
-
-**Phase 1: plan.** The agent reads the spec, the universe file, and
-your existing scripts (if any), and writes a plan to
-`.lightcone/plans/build-plan-<universe>.md`. The plan covers
-dependencies, decision selections, ordered build checklist, and
-verification steps. It asks you to approve before doing anything else.
-
-**Phase 2: loop.** Once you approve, the skill activates an
-*autonomous loop*: the agent works through the plan, writes scripts,
-runs `lc run` to materialize outputs, fixes failures, and commits as
-it goes. The loop keeps going until either every output is
-materialized or it hits its iteration limit (default 25).
-
-You can interrupt the loop at any time. If you do, the next time you
-run `/lc-build` it asks whether to resume or start fresh.
-
-The plan file persists across crashes; only successful completion
-deletes it.
-
-## `/lc-verify` — audit a finished build
-
-**You have materialized outputs. You end with a verification report.**
-
-Read-only. Four checks:
-
-1. `astra validate astra.yaml` passes.
-2. `lc status` shows every output `ok` for the universe in question.
-3. **Decision-code alignment** (the most important check). For every
-   decision in the spec, the agent verifies the code accepts that
-   decision as a parameter — i.e. the value isn't silently hardcoded.
-4. Result files exist and look well-formed (a `type: metric` output
-   should be parseable JSON, etc.).
-
-The skill never modifies anything. If it finds a discrepancy, it
-suggests concrete fixes; you re-run `/lc-build` (or fix by hand) and
-re-verify.
-
-## `/lc-migrate` — wrap existing code
+## `/lc-from-code` — wrap existing code
 
 **You have a folder of scripts. You end with an ASTRA project around
 them.**
 
 When you have an existing analysis (a notebook, a folder of `.py`
-files, a config-driven pipeline), `/lc-migrate` does the wrapping for
-you. Three phases:
+files, a config-driven pipeline), `/lc-from-code` does the wrapping
+for you. Three phases:
 
 1. **Scan.** A subagent reads every script and notebook and returns a
    structured inventory: what each script reads, writes, and contains
@@ -107,9 +72,60 @@ you. Three phases:
    identified decisions, leaves the actual analytical logic alone, and
    iterates on `lc run` until everything materializes.
 
-The hard rule of `/lc-migrate` is **minimal changes**: the skill never
-refactors, renames, or "improves" your code. It only adds the parameter
-plumbing.
+The hard rule of `/lc-from-code` is **minimal changes**: the skill
+never refactors, renames, or "improves" your code. It only adds the
+parameter plumbing.
+
+## `/lc-from-paper` — reproduce a published paper
+
+**You have a DOI or arXiv ID. You end with a reproduction project
+driven by an ORIENT-first agent that hands off to a long-running
+ralph loop for the heavy middle.**
+
+`/lc-from-paper` is the entry point of the paper-reproduction bundle.
+It opens with **ORIENT** — one pre-loop phase in your main session
+that runs in seven stages: ask for the paper, run `/paper-extraction`
+inline (so subsequent questions are grounded in the actual paper),
+interview you (scope, fidelity intent — your prose answer to "when is
+this good enough" — code repo confirmation, paper-specific
+conventions, prior familiarity, external context), clone the
+reference code and run `/lc-from-code` scan-only (when a repo exists),
+optionally follow up, then draft **two files** at the workdir root:
+`constitution.md` (the ralph loop's driving document — Goal, fidelity
+intent, scope, quality bar, evidence) and `CLAUDE.md` (the auto-loading
+walk-up with rules, the paper-vs-code disagreements log, open
+opportunities). You review the drafts, then a single first commit
+captures `constitution.md` + `CLAUDE.md` + the full `work/reference/`
+substrate.
+
+After ORIENT lands, the skill launches a **ralph loop** in a detached
+tmux session against `constitution.md`. Each iteration starts a fresh
+worker that surveys the workdir, picks the next valuable move
+(typically one of ARCHITECT → SPECIFY → LITERATURE → IMPLEMENT → RUN
+→ COMPARE), does it, commits, exits. The fresh-context property
+between iterations is what makes per-phase review work: iteration N
+writes, iteration N+1 reads N's work without bias. You attach to the
+loop with `tmux attach` to watch or steer; iterations are detached so
+they can't ask you questions interactively — they log open questions
+to `open-questions.md` with a best-judgment default and the loop
+keeps moving.
+
+When the loop closes (constitution `status: closed` after COMPARE
+returns `pass` and a cold-survey iteration finds nothing left to
+improve), come back and the agent runs **REVIEW close-out** in your
+session: `/figure-comparison` against the targets, optional
+`/check-sentence-by-sentence`, a walk through the accumulated open
+questions, a `REPRODUCTION-SUMMARY.md`. COMPARE's opportunity
+assessment — where the gaps are, how much they likely matter, and how
+they sit relative to your fidelity intent — propagates into
+CLAUDE.md's *Open opportunities* list as the trajectory of what could
+be tightened on a return visit.
+
+The bundle composes sibling skills: `ralph` (the loop substrate),
+`paper-extraction`, `narrative`, `figure-comparison`, and
+`check-sentence-by-sentence`. See
+[`claude/lightcone/skills/README.md`](https://github.com/LightconeResearch/lightcone-cli/blob/main/claude/lightcone/skills/README.md)
+for the full bundle map.
 
 ## `/lc-feedback` — file an issue without context-switching
 
@@ -133,5 +149,6 @@ interruptible — every phase writes to disk so a `/clear` (which frees
 up context) doesn't lose your work.
 
 If a skill seems stuck, a quick `/clear` followed by reinvoking the
-slash command is often the right move: the spec, plan, and universe
-files are all on disk, so the agent picks up exactly where it left off.
+slash command is often the right move: the spec, universe files, and
+written work products are all on disk, so the agent can pick up where
+it left off.

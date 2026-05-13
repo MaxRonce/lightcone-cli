@@ -300,7 +300,11 @@ def init(
     console.print("\nNext steps:")
     console.print(f"  • Go to the newly created directory [cyan]cd {directory}[/cyan]")
     console.print("  • Start [cyan]claude[/cyan]")
-    console.print("  • Run [cyan]/lc-new[/cyan] to get started on a new analysis")
+    console.print(
+        "  • Run [cyan]/lc-new[/cyan] to scope a new analysis, "
+        "[cyan]/lc-from-code[/cyan] to port existing code, "
+        "or [cyan]/lc-from-paper[/cyan] to reproduce a paper"
+    )
 
 
 _CONTAINERFILE = """\
@@ -335,9 +339,17 @@ results/
 
 _PROJECT_CLAUDE_MD = """# Project Notes for Claude
 
-This is an ASTRA project orchestrated by `lightcone-cli`.
+This is an ASTRA project orchestrated by `lightcone-cli`. It was just
+scaffolded by `lc init` and has not been scoped yet — `astra.yaml` holds
+the placeholder example, not real science.
 
-To materialize outputs declared in `astra.yaml`:
+The three entry skills cover the common starting points:
+
+- `/lc-new` — scope from a research question (empty `astra.yaml`).
+- `/lc-from-code` — wrap an existing codebase in ASTRA.
+- `/lc-from-paper` — reproduce a published paper end-to-end.
+
+Once scoped, the `lc` CLI keeps the substrate in sync:
 
 ```
 lc run                    # all outputs in the default universe

@@ -72,11 +72,12 @@ src/lightcone/                  # PEP 420 namespace package — NO __init__.py
 src/snakemake_executor_plugin_dask/   # Snakemake executor → dask.distributed
 
 claude/lightcone/               # Claude Code plugin (force-included into the wheel)
-├── skills/                     # lc-new, lc-build, lc-verify, lc-migrate, lc-feedback
+├── skills/                     # lc-new, lc-from-code, lc-from-paper,
+│                                # lc-feedback, ralph (+ bundle siblings);
+│                                # reference skills: astra, lc-cli
 ├── agents/                     # lc-extractor (literature subagent)
-├── guides/                     # astra-reference, lightcone-cli-reference, ui-brand
 ├── templates/                  # project CLAUDE.md template
-└── scripts/                    # session hooks (bash): venv, validate-on-save, …
+└── scripts/                    # session hooks (bash): venv, validate-on-save, session-start primer
 
 tests/                          # pytest, mirrors src/
 pyproject.toml                  # hatchling + hatch-vcs; ASTRA + Snakemake as deps
@@ -145,5 +146,5 @@ just docs-serve     # live docs preview
 - [Architecture](architecture.md) — the full execution and integrity story
 - [CLI Reference](cli/index.md) — every command currently shipped
 - [Python API](api/index.md) — the engine modules
-- [Skills](skills/index.md) — what each `/lc-*` skill is supposed to do
+- [Skills](skills/index.md) — what each `/lc-*` skill does (including the `/lc-from-*` family)
 - [Contributing](contributing/setup.md) — getting the dev loop running

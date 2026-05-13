@@ -1,17 +1,12 @@
 ---
 name: lc-new
-description: Create a new ASTRA analysis project with integrated literature support. Scope the research question through conversation, structure outputs and decisions, search for and extract evidence from scientific papers, and build a complete astra.yaml specification. Use when starting a new analysis, when the user says "new project", "new analysis", or "scope". Triggers on "new", "scope", "research question", "start analysis".
+description: Use this skill whenever the user starts a new ASTRA analysis from a research question — scoping the question, structuring inputs and outputs, identifying decisions through literature, and landing astra.yaml + project CLAUDE.md. Triggers on verbs (`new`, `start`, `scope`) combined with nouns (`analysis`, `project`, `question`, `research`) — e.g. "new analysis", "start project", "scope research question" — even if the user doesn't say "project" explicitly. Don't use this for working inside an existing ASTRA project; this is for fresh scoping only.
 allowed-tools: Read, Write(astra.yaml), Write(universes/*), Write(CLAUDE.md), Edit(astra.yaml), Edit(universes/*), Edit(CLAUDE.md), Glob, Grep, Bash(astra:*), Bash(lc:*), WebSearch, WebFetch, AskUserQuestion, Agent
 ---
 
 # /lc-new
 
 Create a new ASTRA analysis project through conversation. Build the spec iteratively -- write to `astra.yaml` after each phase so the user sees progress. Literature search and decision identification happen in distinct phases -- talk first, then extract papers, then identify decisions informed by both conversation and literature.
-
-## References
-
-- [ASTRA Reference](../../guides/astra-reference.md) -- spec structure, decision identification, recipes, universes
-- [lightcone-cli Reference](../../guides/lightcone-cli-reference.md) -- `lc` workflow for the implementation phase that follows scoping
 
 ## Setup
 
@@ -40,7 +35,7 @@ Stage banner: ANALYSIS STRUCTURE
 
 > "Walk me through your analysis step by step. What goes in, what comes out at the end?"
 
-**Guidance on sub-analyses:** Analyses should only be split into multiple sub-analyses if each sub analysis genuinely has materially different inputs and outputs, and if the scope may be too broad if there is just one analysis; we overall want a sub-analysis to feel like it should genuinely be a self-contained product. For example, training + evaluation would typically be one analysis, because the product would be the trained and validated neural network estimator. When in doubt, opt for a single analysis at this stage. If it does need to be multi-stage, ask the user for confirmation and how to split it. For multi-stage analyses, make sure you confirm stage boundaries. See `.claude/guides/astra-reference.md` for YAML structure and sub-analysis guidance.
+**Guidance on sub-analyses:** Analyses should only be split into multiple sub-analyses if each sub analysis genuinely has materially different inputs and outputs, and if the scope may be too broad if there is just one analysis; we overall want a sub-analysis to feel like it should genuinely be a self-contained product. For example, training + evaluation would typically be one analysis, because the product would be the trained and validated neural network estimator. When in doubt, opt for a single analysis at this stage. If it does need to be multi-stage, ask the user for confirmation and how to split it. For multi-stage analyses, make sure you confirm stage boundaries. Invoke `/astra` for YAML structure and sub-analysis guidance.
 
 **One output per output.** Each output should be a single metric, a single plot, or a single artifact. Do not bundle multiple metrics into one output (e.g., "performance_metrics" containing accuracy, F1, and AUC). Each of those is its own output. Same for plots -- one figure per output.
 
@@ -79,7 +74,7 @@ Write extracted prior insights to astra.yaml immediately. Synthesize them by top
 
 ### Decision Identification
 
-Use the conversation and literature to identify decisions. Apply the decision criteria from [astra-reference.md](../../guides/astra-reference.md):
+Use the conversation and literature to identify decisions. Apply the decision criteria from `/astra` (Decisions section):
 
 - What could be done differently and still be defensible?
 - Where did papers disagree or compare alternatives?
@@ -117,6 +112,8 @@ Stage banner: FINALIZING
 ```bash
 astra universe generate -n baseline
 ```
+
+Generate only `baseline` unless the user explicitly asks for additional universes.
 
 ### Populate Narrative
 

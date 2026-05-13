@@ -1,6 +1,20 @@
+---
+name: lc-cli
+description: >
+  Reference for `lc` CLI execution: commands (init/run/status/verify/build/export),
+  the Spec-Code Invariant (`astra.yaml` and code never diverge), status
+  interpretation (ok/stale/missing/alias), failure diagnosis, multiverse
+  runs, scratch overrides for HPC, sub-analysis scaffolding, publishing
+  via WRROC. Invoke whenever running, debugging, or diagnosing `lc`
+  workflows; whenever interpreting `lc status` / `lc verify` output; or
+  whenever the user asks about the development workflow surrounding
+  `astra.yaml`.
+allowed-tools: Read, Glob, Grep, Bash(lc:*), Bash(astra:*)
+---
+
 # lightcone-cli Reference
 
-Reference for lightcone-cli execution: CLI commands, development workflow, status interpretation, and failure diagnosis. For `astra.yaml` spec syntax, see `astra-reference.md`.
+Reference for lightcone-cli execution: CLI commands, development workflow, status interpretation, and failure diagnosis. For `astra.yaml` spec syntax, invoke `/astra`.
 
 ## CLI Reference
 
@@ -11,7 +25,6 @@ lc build [--force] [--runtime docker]                             # Build contai
 lc status [--universe NAME] [--json]                              # Materialization status (text or JSON)
 lc verify [--universe NAME]                                       # Recompute hashes and walk the provenance chain
 lc export wrroc [--output PATH] [--universe NAME] [--zip] [--metadata-only] [--author "NAME <EMAIL>"]  # Export Workflow Run RO-Crate bundle
-lc eval {run,report,compare}                                      # Run/inspect eval suites (requires the 'eval' extra)
 ```
 
 `lc run` is quiet by default — pass `--verbose` to see worker output. `--scratch` is only relevant on HPC sites where `$HOME` doesn't honor `flock` (NERSC etc.); it redirects Snakemake state and Dask spill onto the named filesystem.
@@ -33,7 +46,7 @@ Sub-analyses are scaffolded by hand, since each one is just another `astra.yaml`
 2. Add a `path:` entry to the parent `astra.yaml` under `analyses:` (e.g. `analyses: { my_sub: { path: ./analyses/my_sub } }`).
 3. Add a `<name>: { universe: baseline }` entry to each existing parent universe file.
 
-Populate the sub-analysis's `astra.yaml` with inputs, outputs, and decisions. Use `from:` references to wire inputs and decisions to the parent or siblings — see `astra-reference.md` under "Composition Mechanics."
+Populate the sub-analysis's `astra.yaml` with inputs, outputs, and decisions. Use `from:` references to wire inputs and decisions to the parent or siblings — invoke `/astra` and see "Composition Mechanics" for the grammar.
 
 ## Development Workflow
 

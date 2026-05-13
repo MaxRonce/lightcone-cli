@@ -78,8 +78,9 @@ Open a project in your terminal or editor (see [Getting Started](getting-started
 
     claude
 
-Inside Claude Code you will have dedicated lightcone CLI slash commands available like `/lc-new` and
-`/lc-build` — see [The Agentic Workflow](agent-workflow.md).
+Inside Claude Code you'll type slash commands like `/lc-new`,
+`/lc-from-code`, and `/lc-from-paper` — see
+[The Agentic Workflow](agent-workflow.md).
 
 ## 5. (Optional) Docker or Podman
 

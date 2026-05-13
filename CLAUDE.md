@@ -67,11 +67,16 @@ src/lightcone/              # namespace — NO __init__.py
     ├── harness.py, sandbox.py, graders.py, build.py, report.py, models.py
 
 claude/lightcone/           # Claude plugin source — force-included into the wheel
-├── skills/                 # lc-new, lc-build, lc-verify, lc-migrate, lc-feedback
+├── skills/                 # lc-new, lc-from-code, lc-from-paper,
+│                            # lc-feedback, ralph;
+│                            # paper-reproduction bundle: lc-from-paper (entry),
+│                            # ralph (loop substrate), narrative,
+│                            # paper-extraction, figure-comparison,
+│                            # check-sentence-by-sentence
+│                            # (see skills/README.md for the full bundle map)
 ├── agents/                 # lc-extractor
-├── guides/                 # astra-reference, lightcone-cli-reference, ui-brand
 ├── templates/              # Project CLAUDE.md template
-└── scripts/                # Session hooks (bash): venv activation, validate-on-save, status display
+└── scripts/                # Session hooks (bash): venv activation, validate-on-save, session-start primer
 
 tests/                      # pytest — mirrors src/ structure
 pyproject.toml              # hatchling + hatch-vcs, ASTRA + Snakemake as deps

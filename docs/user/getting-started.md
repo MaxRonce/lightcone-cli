@@ -55,17 +55,24 @@ can edit it by hand whenever you want.
 That opens an interactive session inside `my-analysis/`. Claude Code
 reads `astra.yaml` and `CLAUDE.md` so it has context.
 
-## 4. The five slash commands
+## 4. The slash commands
 
-Inside Claude Code:
+Inside Claude Code. The `/lc-from-*` family is parallel by what you
+start from — a question, code, or a paper — and `/lc-feedback` handles
+bug reports without leaving the session.
 
 | Command | Use it when… |
 |---------|--------------|
 | `/lc-new` | You're starting from a research question and an empty `astra.yaml`. |
-| `/lc-build` | You have a scoped `astra.yaml` and you want the analysis implemented and run. |
-| `/lc-verify` | You finished a build and want a read-only audit. |
-| `/lc-migrate` | You have an existing codebase you want wrapped in ASTRA. |
+| `/lc-from-code` | You have an existing codebase you want wrapped in ASTRA. |
+| `/lc-from-paper` | You have a published paper (DOI / arXiv ID) you want to reproduce. |
 | `/lc-feedback` | Something broke and you want to file a GitHub issue without leaving the session. |
+
+These are structured entry points for common starting situations. You
+don't have to use them — once you're inside a project, you can also
+just describe what you're trying to do to Claude. `astra.yaml`,
+`lc run`, and `lc verify` keep things tracked regardless of how you
+got there.
 
 The next page, [The Agentic Workflow](agent-workflow.md),
 explains each of these in more detail.

@@ -38,31 +38,31 @@ argument-hint: "[OPTIONAL ARG] [--flag VALUE]"
 
 ## Body conventions
 
-Follow [`claude/lightcone/guides/ui-brand.md`](https://github.com/LightconeResearch/lightcone-cli/blob/main/claude/lightcone/guides/ui-brand.md):
-
 - `##` for phase headings; lead with a "Stage banner" line that the
   skill prints to the chat.
-- `✓ / ○ / ✗` for status; never emojis except inside the agent's own
-  branded output.
-- Action prompts in bold sentences (`> "What are you trying to learn?"`).
+- `✓ / ○ / ✗` for status. Skip emoji elsewhere — they belong only
+  inside the agent's own branded banner output.
+- Action prompts in blockquotes (`> "What are you trying to learn?"`).
 - A `## Restrictions` (or `## Hard rules`) section at the end listing
   invariants Claude must not break.
 
-## Referencing guide files
+## Referencing reference skills
 
-Guides live alongside the skills:
+Spec and CLI reference content live in their own skills — `/astra` and
+`/lc-cli` — so any skill needing depth can invoke them directly:
 
 ```markdown
-Before starting, read `.claude/guides/astra-reference.md` for the
-spec, and `.claude/guides/lightcone-cli-reference.md` for the CLI.
+Invoke `/astra` and read the Decisions section before classifying
+candidate decisions, and `/lc-cli` for the Spec-Code Invariant rules.
 ```
 
-The plugin layout means these paths are stable across both bundled
-(installed-package) and dev (in-repo) modes.
+Both are named in the session-start primer so they're discoverable
+from the first turn; explicit invocation in a skill body is the right
+call when a specific section is load-bearing for that skill's work.
 
 ## Spawning subagents
 
-Use `Task` with `subagent_type` to delegate work. The
+Use `Agent` with `subagent_type` to delegate work. The
 `lc-extractor` subagent in `agents/` is the canonical example:
 
 ```python
@@ -79,9 +79,9 @@ Spawn agents in parallel by issuing them in a single tool-use block.
 
 The `evals/` tree has fixtures (currently `evals/tasks/snae/`) and the
 runner lives at `lightcone.eval.harness`. Eval CLI commands are defined
-in `lightcone.eval.cli` (`lc eval run|report|compare`), but **note that
-this group is currently not wired into the top-level `lc` CLI** — see
-the [maintainer summary](../index.md) for status. To run evals
+in `lightcone.eval.cli` and registered as `lc eval run|report|compare`
+when the optional `eval` extra is installed (the registration is
+gated on `ImportError` in `lightcone.cli.commands`). To run evals
 programmatically:
 
 ```python
@@ -92,19 +92,7 @@ from lightcone.eval.cli import run_cmd
 
 ## Installing changes into an existing project
 
-`lc init` copies the plugin once. To pull updated skills into an
-existing project after editing them:
-
-```bash
-python - <<'PY'
-import shutil
-from pathlib import Path
-from lightcone.cli.plugin import get_plugin_source_dir
-src = get_plugin_source_dir()
-dst = Path(".claude/skills")
-if dst.exists(): shutil.rmtree(dst)
-shutil.copytree(src / "skills", dst)
-PY
-```
-
-(See [`lc update`](../cli/update.md) for the longer story.)
+`lc init` copies the plugin once and refuses to run a second time on
+the same directory. See [Updating an existing project](../cli/update.md)
+for the Python heredoc that resyncs all the plugin subdirs (`skills`,
+`agents`, `scripts`, `guides`, `templates`) into an existing project.

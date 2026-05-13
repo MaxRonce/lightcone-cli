@@ -16,7 +16,7 @@ implementation; **you stay in charge of the scientific choices**.
 - [Getting Started](getting-started.md) — your first `lc init` and
   what every directory means.
 - [The Agentic Workflow](agent-workflow.md) — `/lc-new`,
-  `/lc-build`, `/lc-verify`, `/lc-migrate`, `/lc-feedback` — what each
+  `/lc-from-code`, `/lc-from-paper`, and `/lc-feedback` — what each
   one does and when to reach for it.
 - [Tutorial: Your First Analysis](tutorial.md) — an end-to-end worked
   example, written so you can read it without running anything.

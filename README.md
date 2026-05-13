@@ -18,9 +18,11 @@ cd my-analysis
 claude
 ```
 
-Then tell the agent `/lc-new` to scope your research question. After the spec exists, just tell the agent to build it — implementation is a normal Claude Code workflow guided by `.claude/guides/`.
+Then tell the agent what you have to start from — a research question (`/lc-new`), existing code (`/lc-from-code`), or a paper to reproduce (`/lc-from-paper`). After the spec exists, work with the agent however suits you; the substrate (`astra.yaml`, `lc run`, `lc status`, `lc verify`) keeps things in sync.
 
 ## Skills
+
+The `/lc-from-*` family is parallel by what you start from: a question, code, or a paper.
 
 ### `/lc-new` — Scope and specify an analysis
 
@@ -34,9 +36,13 @@ Guides you from a research question to a complete `astra.yaml` specification thr
 
 You don't write any code or YAML during this phase — the agent produces the full specification.
 
-### `/lc-migrate` — Bring an existing project into ASTRA
+### `/lc-from-code` — Bring an existing project into ASTRA
 
 Scans an existing codebase, drafts an `astra.yaml` that captures its inputs, outputs, and analytical decisions, parameterizes the code so decisions can vary across universes, and runs the analysis through `lc` until every output materializes. Existing logic is left intact — changes are confined to parameter plumbing.
+
+### `/lc-from-paper` — Reproduce a published paper
+
+ORIENT-first driver for reproducing a published paper in ASTRA. ORIENT runs in the user's main session in seven stages — asks for the paper, runs `/paper-extraction` inline to acquire it, interviews the user (grounded in the paper), clones the reference code and runs `/lc-from-code` scan-only (if a repo exists), optionally follows up, then drafts a per-paper `constitution.md` (the ralph loop's driving document) + `CLAUDE.md` (auto-loading rules + accumulators) from the full paper-plus-code context for user review. Then the rest of the reproduction hands off to a **ralph loop** whose iterations carry the long middle: ARCHITECT → SPECIFY → LITERATURE → IMPLEMENT → RUN → COMPARE. Each iteration runs in a fresh tmux session against the constitution; the fresh-context property between iterations is what makes per-phase review work. When the loop closes (constitution `status: closed` after COMPARE returns `pass`), REVIEW runs back in the user's main session. Composes a bundle of sibling skills (`ralph`, `paper-extraction`, `narrative`, `figure-comparison`, `check-sentence-by-sentence`). See [`claude/lightcone/skills/README.md`](claude/lightcone/skills/README.md) for the full bundle map.
 
 ### `/lc-feedback` — Report a bug
 
@@ -44,15 +50,13 @@ Files a GitHub issue against the right repo (ASTRA or lightcone-cli) with versio
 
 ### Building and verifying
 
-There is no `/lc-build` or `/lc-verify` skill — building and verifying are part of the normal Claude Code workflow once `astra.yaml` exists. The agent reads `.claude/guides/lightcone-cli-reference.md` (workflow, commands, status meanings) and `.claude/guides/astra-reference.md` (spec syntax) and drives the build directly: write scripts under `src/`, run `lc run`, watch `lc status` until every output is `ok`, then `astra validate astra.yaml` and `lc verify` to confirm the spec is valid and the provenance chain is intact.
+Once `astra.yaml` exists, you (or the agent) build it however suits you. The typical flow is `lc run` to materialize outputs, `lc status` to track progress, `astra validate astra.yaml` for spec validity, and `lc verify` for provenance integrity — agent-driven, ralph-looped, or hand-written, the `lc` substrate stays in sync.
 
 ## CLI Reference
 
 ### Global configuration
 
 The first `lc` invocation auto-creates `~/.lightcone/config.yaml` with `container.runtime: auto`. To pin a runtime or change other settings, edit the file directly.
-
-**Extraction model:** Literature extraction subagents default to Sonnet. To change this, set `extraction_model:` in `~/.lightcone/config.yaml` (options: `sonnet`, `haiku`, or omit for inherit).
 
 ### Project scaffolding
 

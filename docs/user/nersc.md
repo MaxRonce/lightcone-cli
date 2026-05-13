@@ -158,9 +158,9 @@ Once your agent CLI is open (Claude Code in this guide's examples), drive everyt
     /lc-new Please sample a standard Gaussian distribution using numpy.
     ```
 
-=== "Migrate existing code"
+=== "Port existing code"
     ```text
-    /lc-migrate I have code that samples a standard Gaussian distribution using numpy at @../gaussian_sampling. Please create an analysis based on it.
+    /lc-from-code I have code that samples a standard Gaussian distribution using numpy at @../gaussian_sampling. Please create an analysis based on it.
     ```
 
 After that, just keep talking to the agent in plain English about what you want to build next.
