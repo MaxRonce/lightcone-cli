@@ -13,15 +13,16 @@ nav = [
     {"Install" = "user/install.md"},
     {"Getting Started" = "user/getting-started.md"},
     {"The Agent Workflow" = "user/agent-workflow.md"},
-    {"Tutorial: Your First Analysis" = "user/tutorial.md"},
-    {"Multiverse Analyses" = "user/multiverse.md"},
     {"Running on a Cluster" = "user/cluster.md"},
-    {"NERSC (Perlmutter)" = "user/nersc.md"},
     {"Troubleshooting" = "user/troubleshooting.md"},
     {"Glossary" = "user/glossary.md"},
   ]},
   {"Maintainer Docs" = [
     {"Architecture" = "architecture.md"},
+    {"Contributing" = [
+      {"Development Setup" = "contributing/setup.md"},
+      {"Testing" = "contributing/testing.md"},
+    ]},
     {"CLI Reference" = [
       {"Overview" = "cli/index.md"},
       {"lc init" = "cli/init.md"},
@@ -56,10 +57,6 @@ nav = [
       {"figure-comparison" = "skills/figure-comparison.md"},
       {"check-sentence-by-sentence" = "skills/check-sentence-by-sentence.md"},
       {"Authoring Skills" = "skills/authoring.md"},
-    ]},
-    {"Contributing" = [
-      {"Development Setup" = "contributing/setup.md"},
-      {"Testing" = "contributing/testing.md"},
     ]},
   ]},
 ]
