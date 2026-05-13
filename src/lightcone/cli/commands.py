@@ -121,7 +121,12 @@ def _project_root(start: Path | None = None) -> Path:
 # =============================================================================
 # lc init
 # =============================================================================
-
+_LIGHTCONE = """
+_______________________
+| . _ |_ _|_ _ _  _  _ 
+|_|(_|| | | (_(_)| |(/_
+_____|_________________
+"""
 
 @main.command()
 @click.argument("directory", type=click.Path(path_type=Path), default=".")
@@ -159,6 +164,8 @@ def init(
     ``.lightcone/`` project state, ``.claude/`` plugin bundle, ``CLAUDE.md``,
     and an optional Python venv.
     """
+    console.print(f"[cyan]{_LIGHTCONE}[/cyan]")
+
     from astra.cli import init as astra_init
 
     from lightcone.engine.site_registry import detect_current_site
@@ -217,8 +224,10 @@ def init(
     (directory / "CLAUDE.md").write_text(_PROJECT_CLAUDE_MD)
 
     # git init last so the initial commit captures every scaffolded file.
+    no_git = no_git or (directory / ".git").exists()
     if not no_git:
         subprocess.run(["git", "init", "-q"], cwd=directory, check=False)
+        console.print("[green]✓[/green] Initialized git repository")
 
     # venv
     if not no_venv:
@@ -242,6 +251,7 @@ def init(
                     check=False,
                     capture_output=True,
                 )
+        console.print(f"[green]✓[/green] Virtual environment created in [cyan]{directory}/.venv[/cyan]")    
 
     console.print(f"\n[green]Project initialized at[/green] {directory}")
 
@@ -261,9 +271,9 @@ def init(
             )
 
     console.print("\nNext steps:")
-    console.print("  • Edit [cyan]astra.yaml[/cyan] to declare outputs and recipes")
-    console.print("  • [cyan]lc run[/cyan] to materialize outputs")
-    console.print("  • [cyan]lc status[/cyan] to check what's done")
+    console.print(f"  • Go to the newly created directory [cyan]cd {directory}[/cyan]")
+    console.print("  • Start [cyan]claude[/cyan]")
+    console.print("  • Run [cyan]/lc-new[/cyan] to get started on a new analysis")
 
 
 _CONTAINERFILE = """\
@@ -272,7 +282,10 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+RUN uv pip install -r requirements.txt
 
 COPY . .
 """
