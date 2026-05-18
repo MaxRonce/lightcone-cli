@@ -30,7 +30,7 @@ import click
 import yaml
 from rich.console import Console
 
-from lightcone.cli.plugin import get_plugin_source_dir
+from lightcone.cli.plugin import get_agent_bundle_source_dir
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -143,6 +143,12 @@ _____|_________________
 @click.option("--no-git", is_flag=True, help="Skip git init")
 @click.option("--no-venv", is_flag=True, help="Skip Python venv creation")
 @click.option(
+    "--agent",
+    type=click.Choice(["claude", "codex", "none", "both"]),
+    default="claude",
+    help="Agent bundle to install",
+)
+@click.option(
     "--permissions",
     type=click.Choice(["yolo", "recommended", "minimal"]),
     default="recommended",
@@ -163,6 +169,7 @@ def init(
     directory: Path,
     no_git: bool,
     no_venv: bool,
+    agent: str,
     permissions: str,
     scratch_override: str | None,
 ) -> None:
@@ -184,6 +191,9 @@ def init(
 
     if (directory / "astra.yaml").exists():
         raise click.ClickException(f"{directory}/astra.yaml already exists.")
+
+    if agent == "codex" and get_agent_bundle_source_dir("codex") is None:
+        raise click.ClickException("Codex agent bundle is not available yet.")
 
     # Spec scaffold: astra.yaml, universes/baseline.yaml, base .gitignore,
     # src/. We hold off on git init until our own files are in place so
@@ -223,13 +233,17 @@ def init(
     # results/ directory placeholder
     (directory / "results").mkdir(exist_ok=True)
 
-    # Claude Code plugin bundle
-    plugin_source = get_plugin_source_dir()
-    if plugin_source is not None and plugin_source.exists():
-        _install_claude_plugin(directory, plugin_source, permissions)
+    # Agent bundles
+    if agent in {"claude", "both"}:
+        plugin_source = get_agent_bundle_source_dir("claude")
+        if plugin_source is not None and plugin_source.exists():
+            _install_claude_plugin(directory, plugin_source, permissions)
 
-    # Project CLAUDE.md (a stub)
-    (directory / "CLAUDE.md").write_text(_PROJECT_CLAUDE_MD)
+        # Project CLAUDE.md (a stub)
+        (directory / "CLAUDE.md").write_text(_PROJECT_CLAUDE_MD)
+
+    if agent == "both" and get_agent_bundle_source_dir("codex") is None:
+        console.print("[yellow]Codex agent bundle is not available yet; skipping Codex.[/yellow]")
 
     # git init last so the initial commit captures every scaffolded file.
     no_git = no_git or (directory / ".git").exists()
