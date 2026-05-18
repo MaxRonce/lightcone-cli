@@ -156,8 +156,15 @@ def test_agent_bundle_discovery_keeps_claude_plugin_compatibility() -> None:
     assert (claude_bundle / "hooks.json").is_file()
 
 
+def test_agent_bundle_discovery_finds_codex_bundle() -> None:
+    codex_bundle = get_agent_bundle_source_dir("codex")
+
+    assert codex_bundle is not None
+    assert (codex_bundle / "templates" / "AGENTS.md").is_file()
+
+
 def test_agent_bundle_discovery_returns_none_for_missing_bundle() -> None:
-    assert get_agent_bundle_source_dir("codex") is None
+    assert get_agent_bundle_source_dir("missing-agent") is None
 
 
 # ---- lc verify ------------------------------------------------------------
