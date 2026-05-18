@@ -77,6 +77,21 @@ project you can also just describe what you're trying to do to Claude —
 `astra.yaml`, `lc run`, and `lc verify` keep things tracked regardless of how
 you got there.
 
+!!! note "Experimental Codex support"
+
+    You can scaffold a Codex-oriented project instead:
+
+    ```bash
+    lc init --agent codex my-analysis
+    cd my-analysis
+    codex
+    ```
+
+    Codex projects use `AGENTS.md` and `.agents/skills/`. They do not install
+    `.claude/` or write `CLAUDE.md`. The Codex bundle is currently smaller
+    than the Claude Code bundle, so do not expect every Claude skill workflow
+    to have an exact Codex equivalent yet. See [Codex Support](codex.md).
+
 ## 4. Scope the analysis with `/lc-new`
 
 Type:

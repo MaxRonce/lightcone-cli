@@ -1,15 +1,18 @@
 # Skills
 
-Skills are Claude Code slash commands bundled in the lightcone-cli
-plugin. Each shapes the agent's workflow around a recurring research
-operation: scoping an analysis, wrapping existing code, reproducing
-a paper.
+Lightcone ships agent guidance as bundled skills. The mature bundle today is
+the Claude Code plugin, where skills are slash commands. There is also an
+experimental Codex bundle with a smaller set of Codex-readable skill files.
+The Codex bundle is useful for ASTRA and `lc` workflow guidance, but it is not
+yet a complete one-to-one port of every Claude workflow.
 
 If you want to *use* these, start with
 [The Agentic Workflow](../user/agent-workflow.md) in the user guide.
 This page is for maintainers.
 
 ## Available skills
+
+### Claude Code bundle
 
 The `/lc-from-*` family is parallel in what you start from: a question,
 code, or a paper. `/lc-from-paper` is the entry point of a six-skill
@@ -53,10 +56,42 @@ Not entry points. Other skills invoke them — or Claude does, when a deeper ref
 
 These intentionally stay out of the top-level README. Researchers use the project-lifecycle skills directly; the reference skills are infrastructure.
 
+### Codex bundle
+
+Codex projects are scaffolded with:
+
+```bash
+lc init --agent codex my-analysis
+cd my-analysis
+codex
+```
+
+The Codex bundle installs project instructions as `AGENTS.md` and skill
+guidance under `.agents/skills/`. It does not install `.claude/` or write
+`CLAUDE.md`.
+
+Current Codex skills:
+
+| Skill | Purpose |
+|-------|---------|
+| `astra` | Reference for `astra.yaml` structure, decisions, recipes, and the spec-code invariant. |
+| `lc-cli` | Reference for `lc run`, `lc status`, `lc verify`, failure handling, and provenance checks. |
+| `lc-new` | Guidance for scoping a new analysis from a research question. |
+| `lc-from-code` | Guidance for wrapping existing code in ASTRA and materializing outputs through `lc`. |
+
+After relevant Codex-driven edits, run the checks that apply:
+
+```bash
+astra validate astra.yaml
+lc run
+lc status
+lc verify
+```
+
 ## How a skill is wired
 
-Each skill is a `claude/lightcone/skills/<name>/SKILL.md` file with
-YAML frontmatter:
+Claude skills live at `claude/lightcone/skills/<name>/SKILL.md` with YAML
+frontmatter:
 
 ```yaml
 ---
@@ -73,6 +108,10 @@ and what the slash command's argument hint looks like. The body is the
 prompt itself: phase definitions, rules, references to guide files,
 anti-patterns. Skills bundle their own helper scripts under `scripts/`
 and longer prompt fragments under `assets/` when relevant.
+
+Codex skills live at `codex/lightcone/skills/<name>/SKILL.md`. Their
+frontmatter is intentionally simpler (`name` and `description`) and avoids
+Claude-only fields such as `allowed-tools`.
 
 ## Plugin layout
 
@@ -98,6 +137,9 @@ claude/lightcone/
 The plugin is force-included into the wheel via
 `pyproject.toml::tool.hatch.build.targets.wheel.force-include`, so
 `lc init` finds it whether you're running from source or PyPI.
+
+The Codex bundle is co-located under `codex/lightcone/` and is also included
+in the package.
 
 ## Other plugin files
 

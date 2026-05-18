@@ -14,6 +14,8 @@ No need to write code by hand, **you stay in charge of the scientific choices**,
   machine or on a cluster.
 - [Getting Started](getting-started.md) — create your first project,
   run it end-to-end, and understand what each piece does.
+- [Codex Support](codex.md) — experimental Codex project scaffolding and
+  workflow notes.
 - [The Agentic Workflow](agent-workflow.md) — `/lc-new`,
   `/lc-from-code`, `/lc-from-paper`, and `/lc-feedback` — what each
   command does and when to reach for it.
@@ -44,6 +46,13 @@ No need to write code by hand, **you stay in charge of the scientific choices**,
         # then, inside Claude Code: /lc-new
         ```
 
+    === "Codex"
+        ```bash
+        uv tool install lightcone-cli
+        lc init --agent codex my-analysis && cd my-analysis
+        codex
+        ```
+
 That's the shortest possible path. The rest of the guide is the unhurried version.
 
 ## What lightcone-cli is *not*
@@ -54,7 +63,7 @@ That's the shortest possible path. The rest of the guide is the unhurried versio
   Python commands, not a DSL. There's no learning curve beyond what's
   in [Getting Started](getting-started.md).
 - **An IDE.** `lc` is a command-line tool; the agent surface lives
-  inside the agent harness (Claude Code for now).
+  inside an agent harness such as Claude Code or, experimentally, Codex.
 
 If you'd rather skim the design and architecture, the
 [maintainer docs](../maintainer.md) are the other half of this site.

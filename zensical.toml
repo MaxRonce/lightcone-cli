@@ -14,6 +14,7 @@ nav = [
     {"Welcome" = "user/index.md"},
     {"Install" = "user/install.md"},
     {"Getting Started" = "user/getting-started.md"},
+    {"Codex Support" = "user/codex.md"},
     {"The Agent Workflow" = "user/agent-workflow.md"},
     {"Running on a Cluster" = "user/cluster.md"},
     {"Troubleshooting" = "user/troubleshooting.md"},

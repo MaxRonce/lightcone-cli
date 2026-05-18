@@ -192,9 +192,6 @@ def init(
     if (directory / "astra.yaml").exists():
         raise click.ClickException(f"{directory}/astra.yaml already exists.")
 
-    if agent == "codex" and get_agent_bundle_source_dir("codex") is None:
-        raise click.ClickException("Codex agent bundle is not available yet.")
-
     # Spec scaffold: astra.yaml, universes/baseline.yaml, base .gitignore,
     # src/. We hold off on git init until our own files are in place so
     # the initial commit captures the full project state.
@@ -242,8 +239,16 @@ def init(
         # Project CLAUDE.md (a stub)
         (directory / "CLAUDE.md").write_text(_PROJECT_CLAUDE_MD)
 
-    if agent == "both" and get_agent_bundle_source_dir("codex") is None:
-        console.print("[yellow]Codex agent bundle is not available yet; skipping Codex.[/yellow]")
+    if agent in {"codex", "both"}:
+        codex_source = get_agent_bundle_source_dir("codex")
+        if codex_source is None or not codex_source.exists():
+            if agent == "codex":
+                raise click.ClickException("Codex agent bundle is not available yet.")
+            console.print(
+                "[yellow]Codex agent bundle is not available yet; skipping Codex.[/yellow]"
+            )
+        else:
+            _install_codex_bundle(directory, codex_source)
 
     # git init last so the initial commit captures every scaffolded file.
     no_git = no_git or (directory / ".git").exists()
@@ -313,12 +318,26 @@ def init(
 
     console.print("\nNext steps:")
     console.print(f"  • Go to the newly created directory [cyan]cd {directory}[/cyan]")
-    console.print("  • Start [cyan]claude[/cyan]")
-    console.print(
-        "  • Run [cyan]/lc-new[/cyan] to scope a new analysis, "
-        "[cyan]/lc-from-code[/cyan] to port existing code, "
-        "or [cyan]/lc-from-paper[/cyan] to reproduce a paper"
-    )
+    if agent == "codex":
+        console.print("  • Start [cyan]codex[/cyan]")
+    elif agent == "both":
+        console.print("  • Start [cyan]claude[/cyan] or [cyan]codex[/cyan]")
+    elif agent == "none":
+        console.print("  • Run your preferred agent or editor from the project directory")
+    else:
+        console.print("  • Start [cyan]claude[/cyan]")
+
+    if agent in {"claude", "both"}:
+        console.print(
+            "  • Run [cyan]/lc-new[/cyan] to scope a new analysis, "
+            "[cyan]/lc-from-code[/cyan] to port existing code, "
+            "or [cyan]/lc-from-paper[/cyan] to reproduce a paper"
+        )
+    elif agent == "codex":
+        console.print(
+            "  • Ask Codex to scope a new analysis, wrap existing code, "
+            "or run [cyan]lc status[/cyan] / [cyan]lc verify[/cyan]"
+        )
 
 
 _CONTAINERFILE = """\
@@ -410,6 +429,27 @@ def _install_claude_plugin(
         "hooks": hooks,
     }
     (claude_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+
+def _install_codex_bundle(project_dir: Path, bundle_source: Path) -> None:
+    """Copy the bundled Codex guidance into the project.
+
+    Codex uses a project-root ``AGENTS.md`` plus skill files under
+    ``.agents/skills/``. The bundle deliberately does not install Claude Code
+    hooks or permissions.
+    """
+    agents_md = bundle_source / "templates" / "AGENTS.md"
+    if agents_md.exists():
+        shutil.copy2(agents_md, project_dir / "AGENTS.md")
+
+    skills_src = bundle_source / "skills"
+    if skills_src.exists():
+        agents_dir = project_dir / ".agents"
+        agents_dir.mkdir(exist_ok=True)
+        skills_dest = agents_dir / "skills"
+        if skills_dest.exists():
+            shutil.rmtree(skills_dest)
+        shutil.copytree(skills_src, skills_dest)
 
 
 # =============================================================================
