@@ -30,7 +30,7 @@ import click
 import yaml
 from rich.console import Console
 
-from lightcone.cli.plugin import get_plugin_source_dir
+from lightcone.cli.plugin import get_agent_bundle_source_dir
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -143,6 +143,12 @@ _____|_________________
 @click.option("--no-git", is_flag=True, help="Skip git init")
 @click.option("--no-venv", is_flag=True, help="Skip Python venv creation")
 @click.option(
+    "--agent",
+    type=click.Choice(["claude", "codex", "none", "both"]),
+    default="claude",
+    help="Agent bundle to install",
+)
+@click.option(
     "--permissions",
     type=click.Choice(["yolo", "recommended", "minimal"]),
     default="recommended",
@@ -163,6 +169,7 @@ def init(
     directory: Path,
     no_git: bool,
     no_venv: bool,
+    agent: str,
     permissions: str,
     scratch_override: str | None,
 ) -> None:
@@ -223,13 +230,25 @@ def init(
     # results/ directory placeholder
     (directory / "results").mkdir(exist_ok=True)
 
-    # Claude Code plugin bundle
-    plugin_source = get_plugin_source_dir()
-    if plugin_source is not None and plugin_source.exists():
-        _install_claude_plugin(directory, plugin_source, permissions)
+    # Agent bundles
+    if agent in {"claude", "both"}:
+        plugin_source = get_agent_bundle_source_dir("claude")
+        if plugin_source is not None and plugin_source.exists():
+            _install_claude_plugin(directory, plugin_source, permissions)
 
-    # Project CLAUDE.md (a stub)
-    (directory / "CLAUDE.md").write_text(_PROJECT_CLAUDE_MD)
+        # Project CLAUDE.md (a stub)
+        (directory / "CLAUDE.md").write_text(_PROJECT_CLAUDE_MD)
+
+    if agent in {"codex", "both"}:
+        codex_source = get_agent_bundle_source_dir("codex")
+        if codex_source is None or not codex_source.exists():
+            if agent == "codex":
+                raise click.ClickException("Codex agent bundle is not available yet.")
+            console.print(
+                "[yellow]Codex agent bundle is not available yet; skipping Codex.[/yellow]"
+            )
+        else:
+            _install_codex_bundle(directory, codex_source)
 
     # git init last so the initial commit captures every scaffolded file.
     no_git = no_git or (directory / ".git").exists()
@@ -299,12 +318,26 @@ def init(
 
     console.print("\nNext steps:")
     console.print(f"  • Go to the newly created directory [cyan]cd {directory}[/cyan]")
-    console.print("  • Start [cyan]claude[/cyan]")
-    console.print(
-        "  • Run [cyan]/lc-new[/cyan] to scope a new analysis, "
-        "[cyan]/lc-from-code[/cyan] to port existing code, "
-        "or [cyan]/lc-from-paper[/cyan] to reproduce a paper"
-    )
+    if agent == "codex":
+        console.print("  • Start [cyan]codex[/cyan]")
+    elif agent == "both":
+        console.print("  • Start [cyan]claude[/cyan] or [cyan]codex[/cyan]")
+    elif agent == "none":
+        console.print("  • Run your preferred agent or editor from the project directory")
+    else:
+        console.print("  • Start [cyan]claude[/cyan]")
+
+    if agent in {"claude", "both"}:
+        console.print(
+            "  • Run [cyan]/lc-new[/cyan] to scope a new analysis, "
+            "[cyan]/lc-from-code[/cyan] to port existing code, "
+            "or [cyan]/lc-from-paper[/cyan] to reproduce a paper"
+        )
+    elif agent == "codex":
+        console.print(
+            "  • Ask Codex to scope a new analysis, wrap existing code, "
+            "or run [cyan]lc status[/cyan] / [cyan]lc verify[/cyan]"
+        )
 
 
 _CONTAINERFILE = """\
@@ -396,6 +429,27 @@ def _install_claude_plugin(
         "hooks": hooks,
     }
     (claude_dir / "settings.json").write_text(json.dumps(settings, indent=2))
+
+
+def _install_codex_bundle(project_dir: Path, bundle_source: Path) -> None:
+    """Copy the bundled Codex guidance into the project.
+
+    Codex uses a project-root ``AGENTS.md`` plus skill files under
+    ``.agents/skills/``. The bundle deliberately does not install Claude Code
+    hooks or permissions.
+    """
+    agents_md = bundle_source / "templates" / "AGENTS.md"
+    if agents_md.exists():
+        shutil.copy2(agents_md, project_dir / "AGENTS.md")
+
+    skills_src = bundle_source / "skills"
+    if skills_src.exists():
+        agents_dir = project_dir / ".agents"
+        agents_dir.mkdir(exist_ok=True)
+        skills_dest = agents_dir / "skills"
+        if skills_dest.exists():
+            shutil.rmtree(skills_dest)
+        shutil.copytree(skills_src, skills_dest)
 
 
 # =============================================================================

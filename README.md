@@ -25,6 +25,18 @@ Then tell the agent what you have to start from — a research question
 (`/lc-new`), existing code (`/lc-from-code`), or a paper to reproduce
 (`/lc-from-paper`).
 
+Experimental Codex support is also available:
+
+```bash
+lc init --agent codex my-analysis
+cd my-analysis
+codex
+```
+
+Codex projects use `AGENTS.md` and `.agents/skills/` instead of `.claude/`
+and `CLAUDE.md`. The Codex skills are a smaller experimental bundle, not a
+complete port of every Claude workflow.
+
 → [Full getting-started guide](https://docs.lightconeresearch.org/user/getting-started/)
 
 ## Skills

@@ -10,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from lightcone.cli.commands import main
+from lightcone.cli.plugin import get_agent_bundle_source_dir, get_plugin_source_dir
 
 
 @pytest.fixture
@@ -69,10 +70,67 @@ def test_init_creates_project(runner: CliRunner, tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert (project / "astra.yaml").exists()
     assert (project / "CLAUDE.md").exists()
+    assert (project / ".claude").is_dir()
+    assert not (project / "AGENTS.md").exists()
+    assert not (project / ".agents").exists()
     assert (project / ".gitignore").exists()
     assert (project / ".lightcone").is_dir()
     assert (project / "results").is_dir()
     assert (project / "universes").is_dir()
+
+
+def test_init_agent_none_skips_agent_files(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    project = tmp_path / "proj"
+    result = runner.invoke(
+        main, ["init", str(project), "--agent", "none", "--no-git", "--no-venv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / "astra.yaml").exists()
+    assert not (project / "CLAUDE.md").exists()
+    assert not (project / ".claude").exists()
+    assert not (project / "AGENTS.md").exists()
+    assert not (project / ".agents").exists()
+    assert (project / ".lightcone").is_dir()
+
+
+def test_init_agent_codex_installs_codex_bundle(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    project = tmp_path / "proj"
+    result = runner.invoke(
+        main, ["init", str(project), "--agent", "codex", "--no-git", "--no-venv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / "astra.yaml").exists()
+    assert (project / "AGENTS.md").is_file()
+    assert (project / ".agents" / "skills" / "astra" / "SKILL.md").is_file()
+    assert (project / ".agents" / "skills" / "lc-cli" / "SKILL.md").is_file()
+    assert not (project / "CLAUDE.md").exists()
+    assert not (project / ".claude").exists()
+    assert "Start codex" in result.output
+
+
+def test_init_agent_both_installs_claude_and_codex(
+    runner: CliRunner, tmp_path: Path
+) -> None:
+    project = tmp_path / "proj"
+    result = runner.invoke(
+        main, ["init", str(project), "--agent", "both", "--no-git", "--no-venv"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (project / "CLAUDE.md").is_file()
+    assert (project / ".claude").is_dir()
+    assert (project / "AGENTS.md").is_file()
+    assert (project / ".agents" / "skills" / "lc-new" / "SKILL.md").is_file()
+    assert "Start claude or codex" in result.output
+
+
+def test_init_help_mentions_agent_option(runner: CliRunner) -> None:
+    result = runner.invoke(main, ["init", "--help"])
+    assert result.exit_code == 0
+    assert "--agent" in result.output
 
 
 def test_init_refuses_when_astra_yaml_exists(
@@ -124,6 +182,25 @@ def test_init_venv_falls_back_to_python_when_uv_missing(
 
     assert ["python", "-m", "venv", ".venv"] in calls
     assert [".venv/bin/python", "-m", "pip", "install", "-q", "lightcone-cli"] in calls
+
+
+def test_agent_bundle_discovery_keeps_claude_plugin_compatibility() -> None:
+    claude_bundle = get_agent_bundle_source_dir("claude")
+
+    assert claude_bundle is not None
+    assert claude_bundle == get_plugin_source_dir()
+    assert (claude_bundle / "hooks.json").is_file()
+
+
+def test_agent_bundle_discovery_finds_codex_bundle() -> None:
+    codex_bundle = get_agent_bundle_source_dir("codex")
+
+    assert codex_bundle is not None
+    assert (codex_bundle / "templates" / "AGENTS.md").is_file()
+
+
+def test_agent_bundle_discovery_returns_none_for_missing_bundle() -> None:
+    assert get_agent_bundle_source_dir("missing-agent") is None
 
 
 # ---- lc verify ------------------------------------------------------------
