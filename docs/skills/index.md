@@ -66,9 +66,13 @@ cd my-analysis
 codex
 ```
 
-The Codex bundle installs project instructions as `AGENTS.md` and skill
-guidance under `.agents/skills/`. It does not install `.claude/` or write
-`CLAUDE.md`.
+The Codex bundle installs project instructions as `AGENTS.md`, skill guidance
+under `.agents/skills/`, and `/lc-new` / `/lc-from-code` prompt aliases under
+`.codex/prompts/`. It does not install `.claude/` or write `CLAUDE.md`.
+
+Invoke Codex skills with `$lc-new`, `$lc-from-code`, or Codex's `/skills`
+picker. The prompt aliases preserve the familiar slash names on Codex CLI
+versions that load project-local prompts.
 
 Current Codex skills:
 

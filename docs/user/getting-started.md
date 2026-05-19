@@ -87,10 +87,13 @@ you got there.
     codex
     ```
 
-    Codex projects use `AGENTS.md` and `.agents/skills/`. They do not install
-    `.claude/` or write `CLAUDE.md`. The Codex bundle is currently smaller
-    than the Claude Code bundle, so do not expect every Claude skill workflow
-    to have an exact Codex equivalent yet. See [Codex Support](codex.md).
+    Codex projects use `AGENTS.md`, `.agents/skills/`, and prompt aliases under
+    `.codex/prompts/`. They do not install `.claude/` or write `CLAUDE.md`.
+    Invoke Codex skills as `$lc-new` / `$lc-from-code`, through `/skills`, or
+    via the scaffolded `/lc-new` / `/lc-from-code` aliases when your Codex CLI
+    loads project-local prompts. The Codex bundle is currently smaller than the
+    Claude Code bundle, so do not expect every Claude skill workflow to have an
+    exact Codex equivalent yet. See [Codex Support](codex.md).
 
 ## 4. Scope the analysis with `/lc-new`
 

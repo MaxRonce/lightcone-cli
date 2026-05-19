@@ -21,6 +21,8 @@ my-analysis/
 ├── AGENTS.md              # Codex project instructions
 ├── .agents/
 │   └── skills/            # Codex-readable skill guidance
+├── .codex/
+│   └── prompts/           # /lc-new and /lc-from-code aliases
 ├── .lightcone/
 ├── Containerfile
 ├── requirements.txt
@@ -48,6 +50,11 @@ Tell Codex what you are trying to do in plain language. For example:
 - wrap an existing codebase in ASTRA;
 - update `astra.yaml` and the implementation together;
 - debug a failing `lc run`.
+
+You can also invoke the bundled skills explicitly as `$lc-new` or
+`$lc-from-code`, or use Codex's `/skills` picker. The scaffold includes
+`/lc-new` and `/lc-from-code` prompt aliases for Codex CLI versions that load
+project-local prompts from `.codex/prompts/`.
 
 The key invariant is the same as with Claude: `astra.yaml` is the source of
 truth. Code, recipes, decisions, inputs, and outputs should stay synchronized

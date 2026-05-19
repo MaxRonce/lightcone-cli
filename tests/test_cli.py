@@ -107,6 +107,12 @@ def test_init_agent_codex_installs_codex_bundle(
     assert (project / "AGENTS.md").is_file()
     assert (project / ".agents" / "skills" / "astra" / "SKILL.md").is_file()
     assert (project / ".agents" / "skills" / "lc-cli" / "SKILL.md").is_file()
+    assert (project / ".codex" / "prompts" / "lc-new.md").is_file()
+    assert (project / ".codex" / "prompts" / "lc-from-code.md").is_file()
+    assert "$lc-new" in (project / ".codex" / "prompts" / "lc-new.md").read_text()
+    assert "$lc-from-code" in (
+        project / ".codex" / "prompts" / "lc-from-code.md"
+    ).read_text()
     assert not (project / "CLAUDE.md").exists()
     assert not (project / ".claude").exists()
     assert "Start codex" in result.output
@@ -124,6 +130,7 @@ def test_init_agent_both_installs_claude_and_codex(
     assert (project / ".claude").is_dir()
     assert (project / "AGENTS.md").is_file()
     assert (project / ".agents" / "skills" / "lc-new" / "SKILL.md").is_file()
+    assert (project / ".codex" / "prompts" / "lc-new.md").is_file()
     assert "Start claude or codex" in result.output
 
 
@@ -197,6 +204,7 @@ def test_agent_bundle_discovery_finds_codex_bundle() -> None:
 
     assert codex_bundle is not None
     assert (codex_bundle / "templates" / "AGENTS.md").is_file()
+    assert (codex_bundle / "prompts" / "lc-new.md").is_file()
 
 
 def test_agent_bundle_discovery_returns_none_for_missing_bundle() -> None:

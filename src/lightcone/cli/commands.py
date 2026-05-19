@@ -435,8 +435,9 @@ def _install_codex_bundle(project_dir: Path, bundle_source: Path) -> None:
     """Copy the bundled Codex guidance into the project.
 
     Codex uses a project-root ``AGENTS.md`` plus skill files under
-    ``.agents/skills/``. The bundle deliberately does not install Claude Code
-    hooks or permissions.
+    ``.agents/skills/``. Slash-style aliases live under ``.codex/prompts/``
+    and expand to explicit skill mentions. The bundle deliberately does not
+    install Claude Code hooks or permissions.
     """
     agents_md = bundle_source / "templates" / "AGENTS.md"
     if agents_md.exists():
@@ -450,6 +451,15 @@ def _install_codex_bundle(project_dir: Path, bundle_source: Path) -> None:
         if skills_dest.exists():
             shutil.rmtree(skills_dest)
         shutil.copytree(skills_src, skills_dest)
+
+    prompts_src = bundle_source / "prompts"
+    if prompts_src.exists():
+        codex_dir = project_dir / ".codex"
+        codex_dir.mkdir(exist_ok=True)
+        prompts_dest = codex_dir / "prompts"
+        if prompts_dest.exists():
+            shutil.rmtree(prompts_dest)
+        shutil.copytree(prompts_src, prompts_dest)
 
 
 # =============================================================================

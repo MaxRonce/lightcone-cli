@@ -33,9 +33,9 @@ cd my-analysis
 codex
 ```
 
-Codex projects use `AGENTS.md` and `.agents/skills/` instead of `.claude/`
-and `CLAUDE.md`. The Codex skills are a smaller experimental bundle, not a
-complete port of every Claude workflow.
+Codex projects use `AGENTS.md`, `.agents/skills/`, and prompt aliases under
+`.codex/prompts/` instead of `.claude/` and `CLAUDE.md`. The Codex skills are a
+smaller experimental bundle, not a complete port of every Claude workflow.
 
 → [Full getting-started guide](https://docs.lightconeresearch.org/user/getting-started/)
 
